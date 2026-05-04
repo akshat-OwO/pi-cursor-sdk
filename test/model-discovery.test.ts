@@ -541,6 +541,7 @@ describe("discoverModels", () => {
 				message: expect.stringContaining("Cursor model discovery returned no models"),
 			}),
 		]);
+		expect(JSON.stringify(issues)).toContain("selection only");
 	});
 
 	it("uses id as name when displayName is missing", async () => {

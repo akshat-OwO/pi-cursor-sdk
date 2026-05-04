@@ -500,7 +500,8 @@ export async function discoverModels(options: DiscoverModelsOptions = {}): Promi
 		}
 		return useFallbackModels(options, {
 			reason: "empty-model-list",
-			message: "Cursor model discovery returned no models; using fallback Cursor model list.",
+			message:
+				"Cursor model discovery returned no models. Using fallback Cursor models for selection only; verify CURSOR_API_KEY or restart pi with --api-key before running Cursor models.",
 		});
 	} catch {
 		return useFallbackModels(options, {

@@ -1,5 +1,7 @@
 # Cursor Model UX Spec
 
+> Maintainer note: this is an internal design and behavior spec for pi-cursor-sdk. If you are trying to install or use the extension, start with the main [README](../README.md) instead.
+
 ## Status
 
 Implemented design target. This file describes the intended Cursor model UX and should stay aligned with the current code in `src/`.

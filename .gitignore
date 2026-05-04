@@ -4,4 +4,4 @@ coverage/
 .env
 .env.*
 *.tgz
-.pi/settings.json
+.pi/

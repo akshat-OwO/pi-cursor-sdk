@@ -2,10 +2,22 @@
   "name": "pi-cursor-sdk",
   "version": "0.1.0",
   "description": "pi provider extension backed by @cursor/sdk local agents",
+  "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
-  "keywords": ["pi-package", "pi", "cursor", "cursor-sdk", "ai", "extension"],
-  "files": ["src", "README.md", "docs"],
+  "keywords": ["pi-package", "pi", "pi-extension", "cursor", "cursor-sdk", "ai", "extension"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fitchmultz/pi-cursor-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fitchmultz/pi-cursor-sdk/issues"
+  },
+  "homepage": "https://github.com/fitchmultz/pi-cursor-sdk#readme",
+  "files": ["src", "README.md", "docs", "LICENSE", "CHANGELOG.md"],
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
