@@ -1,0 +1,26 @@
+{
+  "name": "pi-cursor-sdk",
+  "version": "0.1.0",
+  "description": "pi provider extension backed by @cursor/sdk local agents",
+  "license": "MIT",
+  "keywords": ["pi", "cursor", "cursor-sdk", "ai", "extension"],
+  "files": ["src", "README.md", "docs"],
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.12"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-ai": "^0.72.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  }
+}
