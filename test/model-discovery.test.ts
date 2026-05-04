@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { discoverModels, encodeModelId, decodeModelSelection } from "../src/model-discovery.js";
-import type { ModelParameterValue } from "@cursor/sdk";
+import {
+	discoverModels,
+	buildCursorModelSelection,
+	getCursorModelMetadata,
+	getCursorModelMetadataEntries,
+	__testUtils,
+} from "../src/model-discovery.js";
 
-// Mock @cursor/sdk
 vi.mock("@cursor/sdk", () => ({
 	Cursor: {
 		models: {
@@ -12,88 +16,13 @@ vi.mock("@cursor/sdk", () => ({
 }));
 
 import { Cursor } from "@cursor/sdk";
+import type { ModelListItem } from "@cursor/sdk";
 
 const mockedList = vi.mocked(Cursor.models.list);
 
-describe("encodeModelId", () => {
-	it("returns base id when params are empty", () => {
-		expect(encodeModelId("gemini-3.1-pro", [])).toBe("gemini-3.1-pro");
-	});
-
-	it("encodes single param", () => {
-		const params: ModelParameterValue[] = [{ id: "fast", value: "true" }];
-		expect(encodeModelId("composer-2", params)).toBe("composer-2:fast=true");
-	});
-
-	it("encodes multiple params sorted by id", () => {
-		const params: ModelParameterValue[] = [
-			{ id: "reasoning", value: "medium" },
-			{ id: "fast", value: "false" },
-			{ id: "context", value: "1m" },
-		];
-		expect(encodeModelId("gpt-5.4", params)).toBe(
-			"gpt-5.4:context=1m;fast=false;reasoning=medium",
-		);
-	});
-
-	it("handles param with empty value", () => {
-		const params: ModelParameterValue[] = [{ id: "mode", value: "" }];
-		expect(encodeModelId("test-model", params)).toBe("test-model:mode=");
-	});
-});
-
-describe("decodeModelSelection", () => {
-	it("decodes plain id with no colon", () => {
-		const result = decodeModelSelection("gemini-3.1-pro");
-		expect(result).toEqual({ id: "gemini-3.1-pro" });
-	});
-
-	it("decodes id with params", () => {
-		const result = decodeModelSelection("composer-2:fast=true");
-		expect(result).toEqual({
-			id: "composer-2",
-			params: [{ id: "fast", value: "true" }],
-		});
-	});
-
-	it("decodes id with multiple params", () => {
-		const result = decodeModelSelection("gpt-5.4:context=1m;fast=false;reasoning=medium");
-		expect(result).toEqual({
-			id: "gpt-5.4",
-			params: [
-				{ id: "context", value: "1m" },
-				{ id: "fast", value: "false" },
-				{ id: "reasoning", value: "medium" },
-			],
-		});
-	});
-
-	it("handles trailing colon with no params", () => {
-		const result = decodeModelSelection("model-id:");
-		expect(result).toEqual({ id: "model-id" });
-	});
-
-	it("round-trips through encode then decode", () => {
-		const params: ModelParameterValue[] = [
-			{ id: "reasoning", value: "high" },
-			{ id: "fast", value: "true" },
-		];
-		const encoded = encodeModelId("gpt-5.2", params);
-		const decoded = decodeModelSelection(encoded);
-		// Params come back in sorted order from encode, decode preserves that order
-		expect(decoded.id).toBe("gpt-5.2");
-		expect(decoded.params).toEqual([
-			{ id: "fast", value: "true" },
-			{ id: "reasoning", value: "high" },
-		]);
-	});
-
-	it("round-trips plain id with no params", () => {
-		const encoded = encodeModelId("gemini-3.1-pro", []);
-		const decoded = decodeModelSelection(encoded);
-		expect(decoded).toEqual({ id: "gemini-3.1-pro" });
-	});
-});
+function register(items: ModelListItem[]) {
+	return __testUtils.registerModelItems(items);
+}
 
 describe("discoverModels", () => {
 	const originalEnv = process.env;
@@ -107,53 +36,87 @@ describe("discoverModels", () => {
 		vi.clearAllMocks();
 	});
 
-	it("returns fallback models when no API key", async () => {
+	it("returns context-qualified fallback models when no API key", async () => {
 		delete process.env.CURSOR_API_KEY;
 		const models = await discoverModels();
-		expect(models).toHaveLength(4);
-		expect(models[0].id).toContain("composer-2");
-		expect(models[1].id).toContain("gpt-5.5");
-		expect(models[2].id).toContain("claude-sonnet");
-		expect(models[3].id).toContain("claude-opus");
+		expect(models.map((model) => model.id)).toEqual([
+			"claude-opus-4-7@1m",
+			"claude-opus-4-7@300k",
+			"claude-sonnet-4-6@1m",
+			"claude-sonnet-4-6@300k",
+			"composer-2",
+			"gpt-5.5@1m",
+			"gpt-5.5@272k",
+		]);
 		expect(mockedList).not.toHaveBeenCalled();
 	});
 
 	it("returns fallback models when API key is whitespace", async () => {
 		process.env.CURSOR_API_KEY = "   ";
 		const models = await discoverModels();
-		expect(models).toHaveLength(4);
-		expect(models[0].id).toContain("composer-2");
+		expect(models.some((model) => model.id === "gpt-5.5@1m")).toBe(true);
+		expect(mockedList).not.toHaveBeenCalled();
 	});
 
-	it("calls Cursor.models.list with API key", async () => {
+	it("calls Cursor.models.list with API key and sorts by base id", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
-			{
-				id: "model-a",
-				displayName: "Model A",
-				variants: [{ params: [], displayName: "Model A", isDefault: true }],
-			},
 			{
 				id: "model-b",
 				displayName: "Model B",
 				variants: [{ params: [], displayName: "Model B", isDefault: true }],
 			},
+			{
+				id: "model-a",
+				displayName: "Model A",
+				variants: [{ params: [], displayName: "Model A", isDefault: true }],
+			},
 		]);
 		const models = await discoverModels();
 		expect(mockedList).toHaveBeenCalledWith({ apiKey: "test-key-123" });
-		expect(models).toHaveLength(2);
-		expect(models[0].id).toBe("model-a");
+		expect(models.map((model) => model.id)).toEqual(["model-a", "model-b"]);
 		expect(models[0].name).toBe("Model A");
-		expect(models[1].id).toBe("model-b");
 	});
 
-	it("encodes default variant params into model id", async () => {
+	it("sorts by base id while preserving Cursor SDK context value order inside each model", async () => {
+		process.env.CURSOR_API_KEY = "test-key-123";
+		mockedList.mockResolvedValueOnce([
+			{
+				id: "z-model",
+				displayName: "Z Model",
+				parameters: [{ id: "context", displayName: "Context", values: [{ value: "long" }, { value: "short" }] }],
+				variants: [{ params: [{ id: "context", value: "short" }], displayName: "Z Model", isDefault: true }],
+			},
+			{
+				id: "a-model",
+				displayName: "A Model",
+				parameters: [{ id: "context", displayName: "Context", values: [{ value: "300k" }, { value: "1m" }] }],
+				variants: [{ params: [{ id: "context", value: "1m" }], displayName: "A Model", isDefault: true }],
+			},
+		]);
+
+		const models = await discoverModels();
+
+		expect(models.map((model) => model.id)).toEqual(["a-model@300k", "a-model@1m", "z-model@long", "z-model@short"]);
+		expect(getCursorModelMetadata("a-model@300k")?.defaultParams).toEqual([{ id: "context", value: "300k" }]);
+		expect(getCursorModelMetadata("z-model@long")?.defaultParams).toEqual([{ id: "context", value: "long" }]);
+	});
+
+	it("registers one pi model per Cursor context value", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
 				id: "gpt-5.4",
 				displayName: "GPT-5.4",
-				parameters: [{ id: "reasoning", displayName: "Reasoning", values: [{ value: "medium" }] }],
+				parameters: [
+					{ id: "context", displayName: "Context", values: [{ value: "272k" }, { value: "1m" }] },
+					{
+						id: "reasoning",
+						displayName: "Reasoning",
+						values: [{ value: "none" }, { value: "medium" }],
+					},
+					{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] },
+				],
 				variants: [
 					{
 						params: [
@@ -168,48 +131,67 @@ describe("discoverModels", () => {
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].id).toBe("gpt-5.4:context=1m;fast=false;reasoning=medium");
-		expect(models[0].name).toBe("GPT-5.4");
+		expect(models.map((model) => model.id)).toEqual(["gpt-5.4@272k", "gpt-5.4@1m"]);
+		expect(models[0].contextWindow).toBe(272000);
+		expect(models[1].contextWindow).toBe(1000000);
+		expect(models[0].name).toBe("GPT-5.4 @ 272k");
+
+		const metadata = getCursorModelMetadata("gpt-5.4@272k");
+		expect(metadata).toMatchObject({
+			baseModelId: "gpt-5.4",
+			context: "272k",
+			supportsFast: true,
+			defaultFast: false,
+		});
+		expect(metadata?.defaultParams).toEqual([
+			{ id: "context", value: "272k" },
+			{ id: "reasoning", value: "medium" },
+			{ id: "fast", value: "false" },
+		]);
 	});
 
-	it("sets reasoning true for models with thinking parameter", async () => {
+	it("does not encode reasoning, effort, thinking, or fast into pi model IDs", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
-				id: "claude-opus-4-6",
-				displayName: "Opus 4.6",
-				parameters: [{ id: "thinking", displayName: "Thinking", values: [{ value: "true" }] }],
+				id: "gpt-5.3-codex",
+				displayName: "GPT-5.3 Codex",
+				parameters: [
+					{ id: "reasoning", displayName: "Reasoning", values: [{ value: "high" }] },
+					{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] },
+				],
 				variants: [
 					{
-						params: [{ id: "thinking", value: "true" }],
-						displayName: "Opus 4.6",
+						params: [
+							{ id: "reasoning", value: "high" },
+							{ id: "fast", value: "true" },
+						],
+						displayName: "GPT-5.3 Codex",
 						isDefault: true,
 					},
 				],
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].reasoning).toBe(true);
+		expect(models[0].id).toBe("gpt-5.3-codex");
+		expect(getCursorModelMetadata("gpt-5.3-codex")?.defaultParams).toEqual([
+			{ id: "reasoning", value: "high" },
+			{ id: "fast", value: "true" },
+		]);
 	});
 
-	it("sets reasoning true for models with reasoning parameter", async () => {
+	it("sets reasoning false for models without thinking controls", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
-				id: "gpt-5.2",
-				displayName: "GPT-5.2",
-				parameters: [{ id: "reasoning", displayName: "Reasoning", values: [{ value: "high" }] }],
-				variants: [
-					{
-						params: [{ id: "reasoning", value: "high" }],
-						displayName: "GPT-5.2",
-						isDefault: true,
-					},
-				],
+				id: "gemini-3.1-pro",
+				displayName: "Gemini 3.1 Pro",
+				variants: [{ params: [], displayName: "Gemini 3.1 Pro", isDefault: true }],
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].reasoning).toBe(true);
+		expect(models[0].reasoning).toBe(false);
+		expect(models[0].thinkingLevelMap).toBeUndefined();
 	});
 
 	it("maps Cursor reasoning values to pi thinking levels", async () => {
@@ -222,7 +204,14 @@ describe("discoverModels", () => {
 					{
 						id: "reasoning",
 						displayName: "Reasoning",
-						values: [{ value: "low" }, { value: "medium" }, { value: "high" }],
+						values: [
+							{ value: "none" },
+							{ value: "minimal" },
+							{ value: "low" },
+							{ value: "medium" },
+							{ value: "high" },
+							{ value: "extra-high" },
+						],
 					},
 				],
 				variants: [
@@ -236,21 +225,21 @@ describe("discoverModels", () => {
 		]);
 		const models = await discoverModels();
 		expect(models[0].thinkingLevelMap).toEqual({
-			off: null,
-			minimal: null,
+			off: "none",
+			minimal: "minimal",
 			low: "low",
 			medium: "medium",
 			high: "high",
-			xhigh: null,
+			xhigh: "extra-high",
 		});
 	});
 
-	it("maps boolean Cursor thinking values to off and high", async () => {
+	it("maps boolean Cursor thinking values to off and high with explicit unsupported nulls", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
-				id: "claude-opus-4-6",
-				displayName: "Opus 4.6",
+				id: "claude-haiku-4-5",
+				displayName: "Haiku 4.5",
 				parameters: [
 					{
 						id: "thinking",
@@ -261,23 +250,24 @@ describe("discoverModels", () => {
 				variants: [
 					{
 						params: [{ id: "thinking", value: "true" }],
-						displayName: "Opus 4.6",
+						displayName: "Haiku 4.5",
 						isDefault: true,
 					},
 				],
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].thinkingLevelMap).toMatchObject({
+		expect(models[0].thinkingLevelMap).toEqual({
 			off: "false",
 			minimal: null,
 			low: null,
 			medium: null,
 			high: "true",
+			xhigh: null,
 		});
 	});
 
-	it("maps Claude effort max to pi xhigh and parses 1m context", async () => {
+	it("maps Claude effort and prefers exact xhigh over max and extra-high", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
@@ -295,6 +285,7 @@ describe("discoverModels", () => {
 							{ value: "high" },
 							{ value: "xhigh" },
 							{ value: "max" },
+							{ value: "extra-high" },
 						],
 					},
 				],
@@ -312,89 +303,147 @@ describe("discoverModels", () => {
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].id).toBe("claude-opus-4-7:context=1m;effort=xhigh;thinking=true");
-		expect(models[0].contextWindow).toBe(1000000);
+		expect(models.map((model) => model.id)).toEqual(["claude-opus-4-7@300k", "claude-opus-4-7@1m"]);
+		expect(models[0].contextWindow).toBe(300000);
+		expect(models[1].contextWindow).toBe(1000000);
 		expect(models[0].thinkingLevelMap).toEqual({
 			off: "false",
 			minimal: null,
 			low: "low",
 			medium: "medium",
 			high: "high",
-			xhigh: "max",
+			xhigh: "xhigh",
 		});
 	});
 
-	it("maps extra-high reasoning values to pi xhigh and parses 272k context", async () => {
+	it("registers text and image input for Cursor models", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
-				id: "gpt-5.4",
-				displayName: "GPT-5.4",
+				id: "vision-capable",
+				displayName: "Vision Capable",
+				variants: [{ params: [], displayName: "Vision Capable", isDefault: true }],
+			},
+		]);
+
+		const models = await discoverModels();
+
+		expect(models[0].input).toEqual(["text", "image"]);
+	});
+
+	it("maps reasoning off to unsupported null when Cursor exposes no none or off value", async () => {
+		process.env.CURSOR_API_KEY = "test-key-123";
+		mockedList.mockResolvedValueOnce([
+			{
+				id: "reasoning-only",
+				displayName: "Reasoning Only",
 				parameters: [
-					{ id: "context", displayName: "Context", values: [{ value: "272k" }, { value: "1m" }] },
 					{
 						id: "reasoning",
 						displayName: "Reasoning",
-						values: [
-							{ value: "none" },
-							{ value: "low" },
-							{ value: "medium" },
-							{ value: "high" },
-							{ value: "extra-high" },
-						],
+						values: [{ value: "low" }, { value: "medium" }, { value: "high" }],
 					},
+				],
+				variants: [{ params: [{ id: "reasoning", value: "medium" }], displayName: "Reasoning Only", isDefault: true }],
+			},
+		]);
+
+		const models = await discoverModels();
+
+		expect(models[0].thinkingLevelMap).toEqual({
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: null,
+		});
+		expect(buildCursorModelSelection("reasoning-only", "off")).toEqual({
+			id: "reasoning-only",
+			params: [{ id: "reasoning", value: "medium" }],
+		});
+	});
+
+	it("maps boolean thinking plus effort to thinking=true with effort and off to thinking=false without effort", async () => {
+		process.env.CURSOR_API_KEY = "test-key-123";
+		mockedList.mockResolvedValueOnce([
+			{
+				id: "claude-like",
+				displayName: "Claude Like",
+				parameters: [
+					{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
+					{ id: "effort", displayName: "Effort", values: [{ value: "low" }, { value: "medium" }, { value: "high" }] },
 				],
 				variants: [
 					{
 						params: [
-							{ id: "context", value: "272k" },
-							{ id: "reasoning", value: "medium" },
+							{ id: "thinking", value: "true" },
+							{ id: "effort", value: "medium" },
 						],
-						displayName: "GPT-5.4",
+						displayName: "Claude Like",
 						isDefault: true,
 					},
 				],
 			},
 		]);
+
 		const models = await discoverModels();
-		expect(models[0].contextWindow).toBe(272000);
-		expect(models[0].thinkingLevelMap?.off).toBe("none");
-		expect(models[0].thinkingLevelMap?.xhigh).toBe("extra-high");
+
+		expect(models[0].thinkingLevelMap).toEqual({
+			off: "false",
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: null,
+		});
+		expect(buildCursorModelSelection("claude-like", "high")).toEqual({
+			id: "claude-like",
+			params: [
+				{ id: "thinking", value: "true" },
+				{ id: "effort", value: "high" },
+			],
+		});
+		expect(buildCursorModelSelection("claude-like", "off")).toEqual({
+			id: "claude-like",
+			params: [{ id: "thinking", value: "false" }],
+		});
 	});
 
-	it("sets reasoning false for models without thinking or reasoning params", async () => {
-		process.env.CURSOR_API_KEY = "test-key-123";
-		mockedList.mockResolvedValueOnce([
-			{
-				id: "gemini-3.1-pro",
-				displayName: "Gemini 3.1 Pro",
-				variants: [{ params: [], displayName: "Gemini 3.1 Pro", isDefault: true }],
-			},
-		]);
+	it("keeps fallback model IDs aligned with the documented fallback list", async () => {
+		delete process.env.CURSOR_API_KEY;
+
 		const models = await discoverModels();
-		expect(models[0].reasoning).toBe(false);
+
+		expect(models.map((model) => model.id)).toEqual([
+			"claude-opus-4-7@1m",
+			"claude-opus-4-7@300k",
+			"claude-sonnet-4-6@1m",
+			"claude-sonnet-4-6@300k",
+			"composer-2",
+			"gpt-5.5@1m",
+			"gpt-5.5@272k",
+		]);
 	});
 
 	it("falls back when Cursor.models.list throws", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockRejectedValueOnce(new Error("network error"));
 		const models = await discoverModels();
-		expect(models).toHaveLength(4);
-		expect(models[0].id).toContain("composer-2");
+		expect(models.some((model) => model.id === "composer-2")).toBe(true);
 	});
 
 	it("falls back when Cursor.models.list returns empty", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([]);
 		const models = await discoverModels();
-		expect(models).toHaveLength(4);
-		expect(models[0].id).toContain("composer-2");
+		expect(models.some((model) => model.id === "claude-opus-4-7@1m")).toBe(true);
 	});
 
 	it("uses id as name when displayName is missing", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
-			{ id: "raw-id", variants: [{ params: [], displayName: "raw-id", isDefault: true }] },
+			{ id: "raw-id", variants: [{ params: [], displayName: "raw-id", isDefault: true }] } as ModelListItem,
 		]);
 		const models = await discoverModels();
 		expect(models[0].name).toBe("raw-id");
@@ -406,6 +455,7 @@ describe("discoverModels", () => {
 			{
 				id: "test-model",
 				displayName: "Test Model",
+				parameters: [{ id: "reasoning", displayName: "Reasoning", values: [{ value: "low" }, { value: "high" }] }],
 				variants: [
 					{ params: [{ id: "reasoning", value: "low" }], displayName: "Test Model" },
 					{ params: [{ id: "reasoning", value: "high" }], displayName: "Test Model" },
@@ -413,15 +463,126 @@ describe("discoverModels", () => {
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].id).toBe("test-model:reasoning=low");
+		expect(models[0].id).toBe("test-model");
+		expect(buildCursorModelSelection("test-model", "off")).toEqual({
+			id: "test-model",
+			params: [{ id: "reasoning", value: "low" }],
+		});
+	});
+});
+
+describe("buildCursorModelSelection", () => {
+	beforeEach(() => {
+		register([
+			{
+				id: "gpt-5.4",
+				displayName: "GPT-5.4",
+				parameters: [
+					{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "272k" }] },
+					{
+						id: "reasoning",
+						displayName: "Reasoning",
+						values: [
+							{ value: "none" },
+							{ value: "low" },
+							{ value: "medium" },
+							{ value: "high" },
+							{ value: "extra-high" },
+						],
+					},
+					{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] },
+				],
+				variants: [
+					{
+						params: [
+							{ id: "context", value: "1m" },
+							{ id: "reasoning", value: "medium" },
+							{ id: "fast", value: "false" },
+						],
+						displayName: "GPT-5.4",
+						isDefault: true,
+					},
+				],
+			},
+			{
+				id: "claude-opus-4-7",
+				displayName: "Opus 4.7",
+				parameters: [
+					{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
+					{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "300k" }] },
+					{
+						id: "effort",
+						displayName: "Effort",
+						values: [
+							{ value: "low" },
+							{ value: "medium" },
+							{ value: "high" },
+							{ value: "xhigh" },
+						],
+					},
+				],
+				variants: [
+					{
+						params: [
+							{ id: "thinking", value: "true" },
+							{ id: "context", value: "1m" },
+							{ id: "effort", value: "xhigh" },
+						],
+						displayName: "Opus 4.7",
+						isDefault: true,
+					},
+				],
+			},
+		]);
 	});
 
-	it("handles model with no variants array", async () => {
-		process.env.CURSOR_API_KEY = "test-key-123";
-		mockedList.mockResolvedValueOnce([
-			{ id: "bare-model", displayName: "Bare Model" },
+	it("uses selected context, pi thinking, and fast state", () => {
+		expect(buildCursorModelSelection("gpt-5.4@272k", "xhigh", true)).toEqual({
+			id: "gpt-5.4",
+			params: [
+				{ id: "context", value: "272k" },
+				{ id: "reasoning", value: "extra-high" },
+				{ id: "fast", value: "true" },
+			],
+		});
+	});
+
+	it("turns Claude thinking off and omits effort when pi thinking is off", () => {
+		expect(buildCursorModelSelection("claude-opus-4-7@300k", "off")).toEqual({
+			id: "claude-opus-4-7",
+			params: [
+				{ id: "thinking", value: "false" },
+				{ id: "context", value: "300k" },
+			],
+		});
+	});
+
+	it("turns Claude thinking on and maps effort when pi thinking is enabled", () => {
+		expect(buildCursorModelSelection("claude-opus-4-7@1m", "high")).toEqual({
+			id: "claude-opus-4-7",
+			params: [
+				{ id: "thinking", value: "true" },
+				{ id: "context", value: "1m" },
+				{ id: "effort", value: "high" },
+			],
+		});
+	});
+
+	it("passes unknown model IDs through plainly", () => {
+		expect(buildCursorModelSelection("gemini-3.1-pro", "off")).toEqual({ id: "gemini-3.1-pro" });
+	});
+
+	it("returns cloned metadata entries", () => {
+		const entries = getCursorModelMetadataEntries();
+		const metadata = entries.find((entry) => entry.piModelId === "gpt-5.4@1m");
+		expect(metadata?.defaultParams).toEqual([
+			{ id: "context", value: "1m" },
+			{ id: "reasoning", value: "medium" },
+			{ id: "fast", value: "false" },
 		]);
-		const models = await discoverModels();
-		expect(models[0].id).toBe("bare-model");
+		metadata!.defaultParams[0].value = "mutated";
+		metadata!.thinkingLevelMap!.medium = "mutated";
+		expect(getCursorModelMetadata("gpt-5.4@1m")?.defaultParams[0].value).toBe("1m");
+		expect(getCursorModelMetadata("gpt-5.4@1m")?.thinkingLevelMap?.medium).toBe("medium");
 	});
 });

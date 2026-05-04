@@ -8,9 +8,10 @@ import {
 	type AssistantMessage,
 } from "@mariozechner/pi-ai";
 import { Agent } from "@cursor/sdk";
-import type { InteractionUpdate, ModelSelection, SDKAgent } from "@cursor/sdk";
+import type { InteractionUpdate, SDKAgent } from "@cursor/sdk";
 import { buildCursorPrompt } from "./context.js";
-import { decodeModelSelection } from "./model-discovery.js";
+import { getEffectiveFastForModelId } from "./cursor-state.js";
+import { buildCursorModelSelection } from "./model-discovery.js";
 
 function makeInitialMessage(model: Model<Api>): AssistantMessage {
 	return {
@@ -38,30 +39,6 @@ function sanitizeError(error: unknown): string {
 	return "Unknown error";
 }
 
-function withPiReasoningLevel(
-	selection: ModelSelection,
-	model: Model<Api>,
-	reasoning: SimpleStreamOptions["reasoning"],
-): ModelSelection {
-	if (!selection.params?.length) return selection;
-
-	const requestedLevel = reasoning ?? "off";
-	const mapped = model.thinkingLevelMap?.[requestedLevel] ?? (reasoning ? reasoning : undefined);
-	if (mapped === undefined || mapped === null) return selection;
-
-	const hasEffort = selection.params.some((param) => param.id === "effort");
-	const params = selection.params.map((param) => {
-		if (param.id === "reasoning") return { ...param, value: mapped };
-		if (param.id === "effort" && reasoning) return { ...param, value: mapped };
-		if (param.id === "thinking") {
-			if (!reasoning) return { ...param, value: mapped };
-			return { ...param, value: hasEffort ? "true" : mapped };
-		}
-		return param;
-	});
-	return { ...selection, params };
-}
-
 export function streamCursor(
 	model: Model<Api>,
 	context: Context,
@@ -80,11 +57,8 @@ export function streamCursor(
 			if (!apiKey) throw new Error("CURSOR_API_KEY is required");
 
 			const cwd = process.cwd();
-			const selection = withPiReasoningLevel(
-				decodeModelSelection(model.id),
-				model,
-				options?.reasoning,
-			);
+			const fastEnabled = getEffectiveFastForModelId(model.id);
+			const selection = buildCursorModelSelection(model.id, options?.reasoning ?? "off", fastEnabled);
 
 			agent = await Agent.create({
 				apiKey,

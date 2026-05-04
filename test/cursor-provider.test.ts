@@ -22,6 +22,8 @@ vi.mock("@cursor/sdk", () => {
 
 import { Agent } from "@cursor/sdk";
 import { streamCursor } from "../src/cursor-provider.js";
+import { __testUtils as modelDiscoveryTestUtils } from "../src/model-discovery.js";
+import type { ModelListItem } from "@cursor/sdk";
 import type { Context, Model } from "@mariozechner/pi-ai";
 
 // Access the mocks via the module
@@ -35,7 +37,7 @@ function makeModel(id = "test-model"): Model<"cursor-sdk"> {
 		provider: "cursor",
 		baseUrl: "",
 		reasoning: false,
-		input: ["text"],
+		input: ["text", "image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 128000,
 		maxTokens: 16384,
@@ -57,9 +59,83 @@ async function collectEvents(stream: ReturnType<typeof streamCursor>) {
 	return events;
 }
 
+const cursorModelItems: ModelListItem[] = [
+	{
+		id: "gpt-5.5",
+		displayName: "GPT-5.5",
+		parameters: [
+			{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "272k" }] },
+			{
+				id: "reasoning",
+				displayName: "Reasoning",
+				values: [
+					{ value: "none" },
+					{ value: "low" },
+					{ value: "medium" },
+					{ value: "high" },
+					{ value: "extra-high" },
+				],
+			},
+			{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] },
+		],
+		variants: [
+			{
+				params: [
+					{ id: "context", value: "1m" },
+					{ id: "fast", value: "false" },
+					{ id: "reasoning", value: "medium" },
+				],
+				displayName: "GPT-5.5",
+				isDefault: true,
+			},
+		],
+	},
+	{
+		id: "claude-opus-4-7",
+		displayName: "Opus 4.7",
+		parameters: [
+			{ id: "context", displayName: "Context", values: [{ value: "1m" }] },
+			{ id: "effort", displayName: "Effort", values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }] },
+			{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
+		],
+		variants: [
+			{
+				params: [
+					{ id: "context", value: "1m" },
+					{ id: "effort", value: "xhigh" },
+					{ id: "thinking", value: "true" },
+				],
+				displayName: "Opus 4.7",
+				isDefault: true,
+			},
+		],
+	},
+	{
+		id: "claude-sonnet-4-6",
+		displayName: "Sonnet 4.6",
+		parameters: [
+			{ id: "context", displayName: "Context", values: [{ value: "1m" }] },
+			{ id: "effort", displayName: "Effort", values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }] },
+			{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
+		],
+		variants: [
+			{
+				params: [
+					{ id: "context", value: "1m" },
+					{ id: "effort", value: "medium" },
+					{ id: "thinking", value: "true" },
+				],
+				displayName: "Sonnet 4.6",
+				isDefault: true,
+			},
+		],
+	},
+];
+
 describe("streamCursor", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		modelDiscoveryTestUtils.registerModelItems(cursorModelItems);
 		// Re-setup default mock return after clearing
 		mockedCreate.mockResolvedValue({
 			send: vi.fn(),
@@ -260,8 +336,47 @@ describe("streamCursor", () => {
 		expect(mockCancel).toHaveBeenCalled();
 	});
 
-	it("passes decoded model selection to Agent.create", async () => {
-		const modelWithParams = makeModel("gpt-5.4:context=1m;fast=false;reasoning=medium");
+	it("forwards latest user images to Cursor Agent.send", async () => {
+		const mockSend = vi.fn().mockResolvedValue({
+			id: "run-1",
+			agentId: "agent-1",
+			status: "finished",
+			wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+			cancel: vi.fn(),
+			supports: () => true,
+			unsupportedReason: () => undefined,
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+		const context: Context = {
+			systemPrompt: "Be helpful.",
+			messages: [
+				{
+					role: "user",
+					content: [
+						{ type: "text", text: "Describe this image" },
+						{ type: "image", data: "base64-image", mimeType: "image/png" },
+					],
+					timestamp: 1,
+				},
+			],
+		};
+
+		const stream = streamCursor(makeModel("gpt-5.5@1m"), context, { apiKey: "test-key" });
+		await collectEvents(stream);
+
+		expect(mockSend).toHaveBeenCalledWith(
+			expect.objectContaining({
+				images: [{ data: "base64-image", mimeType: "image/png" }],
+			}),
+			expect.any(Object),
+		);
+	});
+
+	it("passes Cursor model selection with context and pi thinking off to Agent.create", async () => {
+		const modelWithParams = makeModel("gpt-5.5@1m");
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
 			agentId: "agent-1",
@@ -282,22 +397,22 @@ describe("streamCursor", () => {
 		expect(mockedCreate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				model: {
-					id: "gpt-5.4",
+					id: "gpt-5.5",
 					params: [
 						{ id: "context", value: "1m" },
 						{ id: "fast", value: "false" },
-						{ id: "reasoning", value: "medium" },
+						{ id: "reasoning", value: "none" },
 					],
 				},
 			}),
 		);
 	});
 
-	it("applies pi thinking level to Cursor reasoning parameter", async () => {
+	it("applies pi medium thinking level to Cursor reasoning parameter", async () => {
 		const modelWithParams = {
-			...makeModel("gpt-5.4:context=1m;fast=false;reasoning=medium"),
+			...makeModel("gpt-5.5@1m"),
 			reasoning: true,
-			thinkingLevelMap: { low: "low", medium: "medium", high: "high", off: null, minimal: null },
+			thinkingLevelMap: { low: "low", medium: "medium", high: "high", xhigh: "extra-high", off: null, minimal: null },
 		};
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
@@ -313,17 +428,54 @@ describe("streamCursor", () => {
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const stream = streamCursor(modelWithParams, makeContext(), { apiKey: "test-key", reasoning: "high" });
+		const stream = streamCursor(modelWithParams, makeContext(), { apiKey: "test-key", reasoning: "medium" });
 		await collectEvents(stream);
 
 		expect(mockedCreate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				model: {
-					id: "gpt-5.4",
+					id: "gpt-5.5",
 					params: [
 						{ id: "context", value: "1m" },
 						{ id: "fast", value: "false" },
-						{ id: "reasoning", value: "high" },
+						{ id: "reasoning", value: "medium" },
+					],
+				},
+			}),
+		);
+	});
+
+	it("maps pi xhigh thinking to Cursor extra-high reasoning for a sibling context", async () => {
+		const modelWithParams = {
+			...makeModel("gpt-5.5@272k"),
+			reasoning: true,
+			thinkingLevelMap: { low: "low", medium: "medium", high: "high", xhigh: "extra-high", off: null, minimal: null },
+		};
+		const mockSend = vi.fn().mockResolvedValue({
+			id: "run-1",
+			agentId: "agent-1",
+			status: "finished",
+			wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+			cancel: vi.fn(),
+			supports: () => true,
+			unsupportedReason: () => undefined,
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const stream = streamCursor(modelWithParams, makeContext(), { apiKey: "test-key", reasoning: "xhigh" });
+		await collectEvents(stream);
+
+		expect(mockedCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				model: {
+					id: "gpt-5.5",
+					params: [
+						{ id: "context", value: "272k" },
+						{ id: "fast", value: "false" },
+						{ id: "reasoning", value: "extra-high" },
 					],
 				},
 			}),
@@ -332,14 +484,14 @@ describe("streamCursor", () => {
 
 	it("applies pi thinking level to Cursor Claude effort and thinking parameters", async () => {
 		const modelWithParams = {
-			...makeModel("claude-opus-4-7:context=1m;effort=xhigh;thinking=true"),
+			...makeModel("claude-opus-4-7@1m"),
 			reasoning: true,
 			thinkingLevelMap: {
 				off: "false",
 				low: "low",
 				medium: "medium",
 				high: "high",
-				xhigh: "max",
+				xhigh: "xhigh",
 			},
 		};
 		const mockSend = vi.fn().mockResolvedValue({
@@ -365,7 +517,7 @@ describe("streamCursor", () => {
 					id: "claude-opus-4-7",
 					params: [
 						{ id: "context", value: "1m" },
-						{ id: "effort", value: "max" },
+						{ id: "effort", value: "xhigh" },
 						{ id: "thinking", value: "true" },
 					],
 				},
@@ -375,9 +527,9 @@ describe("streamCursor", () => {
 
 	it("turns Cursor thinking off when pi thinking is off", async () => {
 		const modelWithParams = {
-			...makeModel("claude-sonnet-4-6:context=1m;effort=medium;thinking=true"),
+			...makeModel("claude-sonnet-4-6@1m"),
 			reasoning: true,
-			thinkingLevelMap: { off: "false", low: "low", medium: "medium", high: "high", xhigh: "max" },
+			thinkingLevelMap: { off: "false", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
 		};
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
@@ -402,7 +554,6 @@ describe("streamCursor", () => {
 					id: "claude-sonnet-4-6",
 					params: [
 						{ id: "context", value: "1m" },
-						{ id: "effort", value: "medium" },
 						{ id: "thinking", value: "false" },
 					],
 				},

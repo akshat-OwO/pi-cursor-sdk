@@ -6,177 +6,243 @@ import type {
 	ModelSelection,
 } from "@cursor/sdk";
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
-import type { ThinkingLevelMap } from "@mariozechner/pi-ai";
+import type { ModelThinkingLevel, ThinkingLevelMap } from "@mariozechner/pi-ai";
 
-const FALLBACK_MODELS: ProviderModelConfig[] = [
+const FALLBACK_CONTEXT_WINDOW = 128000;
+const FALLBACK_MAX_TOKENS = 16384;
+const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+const TEXT_AND_IMAGE_INPUT: ProviderModelConfig["input"] = ["text", "image"];
+
+const FALLBACK_MODEL_ITEMS: ModelListItem[] = [
 	{
-		id: "composer-2:fast=true",
-		name: "Cursor Composer 2",
-		reasoning: false,
-		input: ["text", "image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 128000,
-		maxTokens: 16384,
+		id: "composer-2",
+		displayName: "Cursor Composer 2",
+		parameters: [
+			{
+				id: "fast",
+				displayName: "Fast",
+				values: [{ value: "false" }, { value: "true" }],
+			},
+		],
+		variants: [
+			{
+				params: [{ id: "fast", value: "true" }],
+				displayName: "Cursor Composer 2",
+				isDefault: true,
+			},
+		],
 	},
 	{
-		id: "gpt-5.5:context=1m;reasoning=medium;fast=false",
-		name: "GPT-5.5",
-		reasoning: true,
-		thinkingLevelMap: {
-			off: "none",
-			minimal: null,
-			low: "low",
-			medium: "medium",
-			high: "high",
-			xhigh: "extra-high",
-		},
-		input: ["text", "image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1000000,
-		maxTokens: 16384,
+		id: "gpt-5.5",
+		displayName: "GPT-5.5",
+		parameters: [
+			{
+				id: "context",
+				displayName: "Context",
+				values: [{ value: "1m" }, { value: "272k" }],
+			},
+			{
+				id: "reasoning",
+				displayName: "Reasoning",
+				values: [
+					{ value: "none" },
+					{ value: "low" },
+					{ value: "medium" },
+					{ value: "high" },
+					{ value: "extra-high" },
+				],
+			},
+			{
+				id: "fast",
+				displayName: "Fast",
+				values: [{ value: "false" }, { value: "true" }],
+			},
+		],
+		variants: [
+			{
+				params: [
+					{ id: "context", value: "1m" },
+					{ id: "reasoning", value: "medium" },
+					{ id: "fast", value: "false" },
+				],
+				displayName: "GPT-5.5",
+				isDefault: true,
+			},
+		],
 	},
 	{
-		id: "claude-sonnet-4-6:context=1m;effort=medium;thinking=true",
-		name: "Sonnet 4.6",
-		reasoning: true,
-		thinkingLevelMap: {
-			off: "false",
-			minimal: null,
-			low: "low",
-			medium: "medium",
-			high: "high",
-			xhigh: "max",
-		},
-		input: ["text", "image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1000000,
-		maxTokens: 16384,
+		id: "claude-sonnet-4-6",
+		displayName: "Sonnet 4.6",
+		parameters: [
+			{
+				id: "thinking",
+				displayName: "Thinking",
+				values: [{ value: "false" }, { value: "true" }],
+			},
+			{
+				id: "context",
+				displayName: "Context",
+				values: [{ value: "1m" }, { value: "300k" }],
+			},
+			{
+				id: "effort",
+				displayName: "Effort",
+				values: [
+					{ value: "low" },
+					{ value: "medium" },
+					{ value: "high" },
+					{ value: "xhigh" },
+					{ value: "max" },
+				],
+			},
+			{
+				id: "fast",
+				displayName: "Fast",
+				values: [{ value: "false" }, { value: "true" }],
+			},
+		],
+		variants: [
+			{
+				params: [
+					{ id: "thinking", value: "true" },
+					{ id: "context", value: "1m" },
+					{ id: "effort", value: "medium" },
+					{ id: "fast", value: "false" },
+				],
+				displayName: "Sonnet 4.6",
+				isDefault: true,
+			},
+		],
 	},
 	{
-		id: "claude-opus-4-7:context=1m;effort=xhigh;thinking=true",
-		name: "Opus 4.7",
-		reasoning: true,
-		thinkingLevelMap: {
-			off: "false",
-			minimal: null,
-			low: "low",
-			medium: "medium",
-			high: "high",
-			xhigh: "max",
-		},
-		input: ["text", "image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1000000,
-		maxTokens: 16384,
+		id: "claude-opus-4-7",
+		displayName: "Opus 4.7",
+		parameters: [
+			{
+				id: "thinking",
+				displayName: "Thinking",
+				values: [{ value: "false" }, { value: "true" }],
+			},
+			{
+				id: "context",
+				displayName: "Context",
+				values: [{ value: "1m" }, { value: "300k" }],
+			},
+			{
+				id: "effort",
+				displayName: "Effort",
+				values: [
+					{ value: "low" },
+					{ value: "medium" },
+					{ value: "high" },
+					{ value: "xhigh" },
+					{ value: "max" },
+				],
+			},
+		],
+		variants: [
+			{
+				params: [
+					{ id: "thinking", value: "true" },
+					{ id: "context", value: "1m" },
+					{ id: "effort", value: "xhigh" },
+				],
+				displayName: "Opus 4.7",
+				isDefault: true,
+			},
+		],
 	},
 ];
 
-/**
- * Encode a Cursor model base ID and optional params into a single pi model ID.
- *
- * Format: `baseId` when params are empty, otherwise `baseId:key1=val1;key2=val2`.
- * The encoding is deterministic: params are sorted by id before joining.
- */
-export function encodeModelId(baseId: string, params: ModelParameterValue[]): string {
-	if (!params.length) return baseId;
-	const suffix = params
-		.slice()
-		.sort((a, b) => a.id.localeCompare(b.id))
-		.map((p) => `${p.id}=${p.value}`)
-		.join(";");
-	return `${baseId}:${suffix}`;
+export interface CursorModelMetadata {
+	piModelId: string;
+	baseModelId: string;
+	displayName: string;
+	defaultParams: ModelParameterValue[];
+	context?: string;
+	contextWindow: number;
+	supportsFast: boolean;
+	defaultFast: boolean;
+	supportsReasoning: boolean;
+	thinkingLevelMap?: ThinkingLevelMap;
+	parameterIds: {
+		context: boolean;
+		reasoning: boolean;
+		effort: boolean;
+		thinking: boolean;
+		fast: boolean;
+	};
 }
 
-/**
- * Decode a pi model ID back into a Cursor `ModelSelection`.
- *
- * Reverses `encodeModelId`. If the id contains no `:`, returns `{ id }`
- * with no params (backward compatible with plain model ids).
- */
-export function decodeModelSelection(modelId: string): ModelSelection {
-	const colonIndex = modelId.indexOf(":");
-	if (colonIndex < 0) return { id: modelId };
+const metadataByPiModelId = new Map<string, CursorModelMetadata>();
 
-	const baseId = modelId.slice(0, colonIndex);
-	const paramString = modelId.slice(colonIndex + 1);
-	if (!paramString) return { id: baseId };
-
-	const params: ModelParameterValue[] = paramString.split(";").map((pair) => {
-		const eqIndex = pair.indexOf("=");
-		if (eqIndex < 0) return { id: pair, value: "" };
-		return { id: pair.slice(0, eqIndex), value: pair.slice(eqIndex + 1) };
-	});
-
-	return { id: baseId, params };
+function cloneParams(params: ModelParameterValue[]): ModelParameterValue[] {
+	return params.map((param) => ({ ...param }));
 }
 
-/**
- * Determine if a model supports reasoning/thinking based on its parameters.
- */
 function getParameter(item: ModelListItem, id: string): ModelParameterDefinition | undefined {
-	return item.parameters?.find((p) => p.id === id);
+	return item.parameters?.find((parameter) => parameter.id === id);
 }
 
-function getReasoningParameter(item: ModelListItem): ModelParameterDefinition | undefined {
-	return getParameter(item, "reasoning") ?? getParameter(item, "effort") ?? getParameter(item, "thinking");
+function hasBooleanValues(parameter: ModelParameterDefinition | undefined): boolean {
+	const values = new Set((parameter?.values ?? []).map((value) => value.value.toLowerCase()));
+	return values.has("false") && values.has("true");
 }
 
-function hasReasoningParameter(item: ModelListItem): boolean {
-	return getReasoningParameter(item) !== undefined;
+function getParameterValue(parameter: ModelParameterDefinition | undefined, lowerValue: string): string | null {
+	const value = parameter?.values.find((candidate) => candidate.value.toLowerCase() === lowerValue);
+	return value?.value ?? null;
 }
 
-function hasValue(values: Set<string>, value: string): boolean {
-	return values.has(value.toLowerCase());
-}
-
-function mapLevel(values: Set<string>, level: keyof ThinkingLevelMap): string | null {
-	if (level === "xhigh") {
-		if (hasValue(values, "max")) return "max";
-		if (hasValue(values, "xhigh")) return "xhigh";
-		if (hasValue(values, "extra-high")) return "extra-high";
-		return null;
+function getPreferredParameterValue(
+	parameter: ModelParameterDefinition | undefined,
+	lowerValues: string[],
+): string | null {
+	for (const value of lowerValues) {
+		const candidate = getParameterValue(parameter, value);
+		if (candidate) return candidate;
 	}
-	if (hasValue(values, level)) return level;
 	return null;
 }
 
-function getParameterValues(parameter?: ModelParameterDefinition): Set<string> {
-	return new Set(parameter?.values.map((v) => v.value.toLowerCase()) ?? []);
+function mapComparableLevel(
+	parameter: ModelParameterDefinition | undefined,
+	level: Exclude<ModelThinkingLevel, "off">,
+): string | null {
+	if (level === "xhigh") {
+		return getPreferredParameterValue(parameter, ["xhigh", "max", "extra-high"]);
+	}
+	return getParameterValue(parameter, level);
 }
 
 function getThinkingLevelMap(item: ModelListItem): ThinkingLevelMap | undefined {
-	const effortParameter = getParameter(item, "effort");
 	const reasoningParameter = getParameter(item, "reasoning");
+	const effortParameter = getParameter(item, "effort");
 	const thinkingParameter = getParameter(item, "thinking");
-	const parameter = effortParameter ?? reasoningParameter ?? thinkingParameter;
-	if (!parameter) return undefined;
+	const valueParameter = effortParameter ?? reasoningParameter ?? thinkingParameter;
+	if (!valueParameter) return undefined;
 
-	const values = getParameterValues(parameter);
-	const thinkingValues = getParameterValues(thinkingParameter);
-	if (parameter.id === "thinking") {
+	if (valueParameter.id === "thinking" && hasBooleanValues(valueParameter)) {
 		return {
-			off: hasValue(values, "false") ? "false" : null,
+			off: getParameterValue(valueParameter, "false"),
 			minimal: null,
 			low: null,
 			medium: null,
-			high: hasValue(values, "true") ? "true" : null,
+			high: getParameterValue(valueParameter, "true"),
 			xhigh: null,
 		};
 	}
 
 	return {
-		off: hasValue(values, "off")
-			? "off"
-			: hasValue(values, "none")
-				? "none"
-				: hasValue(thinkingValues, "false")
-					? "false"
-					: null,
-		minimal: mapLevel(values, "minimal"),
-		low: mapLevel(values, "low"),
-		medium: mapLevel(values, "medium"),
-		high: mapLevel(values, "high"),
-		xhigh: mapLevel(values, "xhigh"),
+		off:
+			getParameterValue(reasoningParameter, "none") ??
+			getParameterValue(reasoningParameter, "off") ??
+			getParameterValue(thinkingParameter, "false"),
+		minimal: mapComparableLevel(valueParameter, "minimal"),
+		low: mapComparableLevel(valueParameter, "low"),
+		medium: mapComparableLevel(valueParameter, "medium"),
+		high: mapComparableLevel(valueParameter, "high"),
+		xhigh: mapComparableLevel(valueParameter, "xhigh"),
 	};
 }
 
@@ -189,48 +255,203 @@ function parseContextWindow(value: string): number | undefined {
 	return Math.round(amount * (unit === "m" ? 1000000 : 1000));
 }
 
-function getContextWindow(_item: ModelListItem, params: ModelParameterValue[]): number {
-	const contextParam = params.find((p) => p.id === "context");
-	const parsed = contextParam ? parseContextWindow(contextParam.value) : undefined;
-	return parsed ?? 128000;
-}
-
-/**
- * Find the default variant's params for a model.
- * Falls back to empty params if no variants or no default is marked.
- */
 function getDefaultParams(item: ModelListItem): ModelParameterValue[] {
 	if (!item.variants?.length) return [];
-	const defaultVariant = item.variants.find((v) => v.isDefault);
-	return defaultVariant?.params ?? item.variants[0]?.params ?? [];
+	const defaultVariant = item.variants.find((variant) => variant.isDefault) ?? item.variants[0];
+	return cloneParams(defaultVariant?.params ?? []);
 }
 
-function toModelConfig(item: ModelListItem): ProviderModelConfig {
-	const params = getDefaultParams(item);
+function replaceParam(
+	params: ModelParameterValue[],
+	id: string,
+	value: string,
+): ModelParameterValue[] {
+	let replaced = false;
+	const next = params.map((param) => {
+		if (param.id !== id) return { ...param };
+		replaced = true;
+		return { id, value };
+	});
+	if (!replaced) next.push({ id, value });
+	return next;
+}
+
+function getParamValue(params: ModelParameterValue[], id: string): string | undefined {
+	return params.find((param) => param.id === id)?.value;
+}
+
+function encodePiModelId(baseModelId: string, context?: string): string {
+	return context ? `${baseModelId}@${context}` : baseModelId;
+}
+
+function getModelName(item: ModelListItem, context?: string): string {
+	const displayName = item.displayName || item.id;
+	return context ? `${displayName} @ ${context}` : displayName;
+}
+
+function toMetadata(
+	item: ModelListItem,
+	piModelId: string,
+	defaultParams: ModelParameterValue[],
+	context: string | undefined,
+): CursorModelMetadata {
 	const thinkingLevelMap = getThinkingLevelMap(item);
+	const fastValue = getParamValue(defaultParams, "fast")?.toLowerCase();
 	return {
-		id: encodeModelId(item.id, params),
-		name: item.displayName || item.id,
-		reasoning: hasReasoningParameter(item),
+		piModelId,
+		baseModelId: item.id,
+		displayName: item.displayName || item.id,
+		defaultParams: cloneParams(defaultParams),
+		...(context ? { context } : {}),
+		contextWindow: context ? parseContextWindow(context) ?? FALLBACK_CONTEXT_WINDOW : FALLBACK_CONTEXT_WINDOW,
+		supportsFast: getParameter(item, "fast") !== undefined,
+		defaultFast: fastValue === "true",
+		supportsReasoning: thinkingLevelMap !== undefined,
 		...(thinkingLevelMap ? { thinkingLevelMap } : {}),
-		input: ["text", "image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: getContextWindow(item, params),
-		maxTokens: 16384,
+		parameterIds: {
+			context: getParameter(item, "context") !== undefined,
+			reasoning: getParameter(item, "reasoning") !== undefined,
+			effort: getParameter(item, "effort") !== undefined,
+			thinking: getParameter(item, "thinking") !== undefined,
+			fast: getParameter(item, "fast") !== undefined,
+		},
 	};
+}
+
+function toModelConfig(metadata: CursorModelMetadata, name: string): ProviderModelConfig {
+	return {
+		id: metadata.piModelId,
+		name,
+		reasoning: metadata.supportsReasoning,
+		...(metadata.thinkingLevelMap ? { thinkingLevelMap: metadata.thinkingLevelMap } : {}),
+		input: [...TEXT_AND_IMAGE_INPUT],
+		cost: { ...ZERO_COST },
+		contextWindow: metadata.contextWindow,
+		maxTokens: FALLBACK_MAX_TOKENS,
+	};
+}
+
+function toModelConfigs(item: ModelListItem): ProviderModelConfig[] {
+	const defaultParams = getDefaultParams(item);
+	const contextParameter = getParameter(item, "context");
+	const contextValues = contextParameter?.values.map((value) => value.value) ?? [];
+	const contexts = contextValues.length > 0 ? contextValues : [undefined];
+
+	return contexts.map((context) => {
+		const params = context ? replaceParam(defaultParams, "context", context) : defaultParams;
+		const piModelId = encodePiModelId(item.id, context);
+		const metadata = toMetadata(item, piModelId, params, context);
+		metadataByPiModelId.set(piModelId, metadata);
+		return toModelConfig(metadata, getModelName(item, context));
+	});
+}
+
+function sortModelsByBaseId(items: ModelListItem[]): ModelListItem[] {
+	return [...items].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function registerModelItems(items: ModelListItem[]): ProviderModelConfig[] {
+	metadataByPiModelId.clear();
+	return sortModelsByBaseId(items).flatMap(toModelConfigs);
+}
+
+export function getCursorModelMetadata(modelId: string): CursorModelMetadata | undefined {
+	return metadataByPiModelId.get(modelId);
+}
+
+export function getCursorModelMetadataEntries(): CursorModelMetadata[] {
+	return [...metadataByPiModelId.values()].map((metadata) => ({
+		...metadata,
+		defaultParams: cloneParams(metadata.defaultParams),
+		...(metadata.thinkingLevelMap ? { thinkingLevelMap: { ...metadata.thinkingLevelMap } } : {}),
+		parameterIds: { ...metadata.parameterIds },
+	}));
+}
+
+function setParam(params: ModelParameterValue[], id: string, value: string): void {
+	const existing = params.find((param) => param.id === id);
+	if (existing) {
+		existing.value = value;
+	} else {
+		params.push({ id, value });
+	}
+}
+
+function deleteParam(params: ModelParameterValue[], id: string): void {
+	const index = params.findIndex((param) => param.id === id);
+	if (index >= 0) params.splice(index, 1);
+}
+
+function applyThinkingLevel(
+	metadata: CursorModelMetadata,
+	params: ModelParameterValue[],
+	level: ModelThinkingLevel,
+): void {
+	const mapped = metadata.thinkingLevelMap?.[level];
+	if (mapped === undefined || mapped === null) return;
+
+	if (level === "off") {
+		if (metadata.parameterIds.thinking && mapped === "false") {
+			setParam(params, "thinking", mapped);
+			deleteParam(params, "effort");
+			return;
+		}
+		if (metadata.parameterIds.reasoning) {
+			setParam(params, "reasoning", mapped);
+		}
+		return;
+	}
+
+	if (metadata.parameterIds.effort) {
+		if (metadata.parameterIds.thinking) setParam(params, "thinking", "true");
+		setParam(params, "effort", mapped);
+		return;
+	}
+
+	if (metadata.parameterIds.reasoning) {
+		setParam(params, "reasoning", mapped);
+		return;
+	}
+
+	if (metadata.parameterIds.thinking) {
+		setParam(params, "thinking", mapped);
+	}
+}
+
+export function buildCursorModelSelection(
+	modelId: string,
+	thinkingLevel: ModelThinkingLevel,
+	fastEnabled?: boolean,
+): ModelSelection {
+	const metadata = getCursorModelMetadata(modelId);
+	if (!metadata) return { id: modelId };
+
+	const params = cloneParams(metadata.defaultParams);
+	applyThinkingLevel(metadata, params, thinkingLevel);
+
+	if (metadata.supportsFast && fastEnabled !== undefined) {
+		setParam(params, "fast", fastEnabled ? "true" : "false");
+	}
+
+	return params.length > 0 ? { id: metadata.baseModelId, params } : { id: metadata.baseModelId };
 }
 
 export async function discoverModels(): Promise<ProviderModelConfig[]> {
 	const apiKey = process.env.CURSOR_API_KEY?.trim();
-	if (!apiKey) return FALLBACK_MODELS;
+	if (!apiKey) return registerModelItems(FALLBACK_MODEL_ITEMS);
 
 	try {
 		const models = await Cursor.models.list({ apiKey });
 		if (models.length > 0) {
-			return models.map(toModelConfig);
+			return registerModelItems(models);
 		}
-		return FALLBACK_MODELS;
+		return registerModelItems(FALLBACK_MODEL_ITEMS);
 	} catch {
-		return FALLBACK_MODELS;
+		return registerModelItems(FALLBACK_MODEL_ITEMS);
 	}
 }
+
+export const __testUtils = {
+	parseContextWindow,
+	registerModelItems,
+};

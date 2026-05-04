@@ -2,14 +2,17 @@
 
 ## Status
 
-Design draft. This file describes a target UX direction, not the exact behavior of the current code in `src/`.
+Implemented design target. This file describes the intended Cursor model UX and should stay aligned with the current code in `src/`.
 
-Current implementation status to keep in mind while reading this spec:
+Current implementation notes:
 
-- current model IDs use `base:param=value` encoding
-- default Cursor variant params are encoded directly into the pi model ID
-- the `@context` model-ID shape in this doc is not implemented yet
-- Cursor-only fast-mode state and footer/status behavior in this doc are not implemented yet
+- Cursor context variants use `base@context` pi model IDs.
+- Cursor `reasoning`, `effort`, and `thinking` are driven by pi native thinking.
+- Cursor `fast` is extension state, not model identity.
+- Cursor fast status uses `ctx.ui.setStatus()`; the default pi footer remains intact.
+- Installed `@cursor/sdk` user messages accept images, and Cursor models are treated as image-capable; registered input metadata is `text` plus `image`.
+- `@cursor/sdk` is a package dependency of this extension; users should not need a global SDK install.
+- Cursor auth uses the `CURSOR_API_KEY` environment variable. The extension config file stores only non-secret Cursor-only state such as fast defaults.
 
 ## Goal
 
@@ -17,10 +20,10 @@ Make Cursor models feel native in pi by leaning on pi's existing model, thinking
 
 Main outcomes:
 
-- `pi --list-models` shows pi-native Cursor models with accurate `contextWindow`, `maxTokens`, thinking, and image metadata.
+- `pi --list-models` shows pi-native Cursor models with accurate `contextWindow`, thinking metadata, and conservative defaults where the Cursor SDK does not expose limits or capabilities.
 - `shift+tab` is pi's native thinking control and drives Cursor `reasoning` or `effort`.
 - Cursor context options are represented as pi-visible model variants when they change native model metadata.
-- Cursor-only state, currently `fast`, is controlled by extension commands/shortcuts and shown through native status text.
+- Cursor-only state, currently `fast`, is controlled by extension commands and shown through native status text.
 - The default pi footer remains intact.
 - Model capabilities are discovered from the Cursor SDK, not hardcoded per model.
 
@@ -164,7 +167,7 @@ Each registered model must set:
 - `thinkingLevelMap`: model-specific pi-to-Cursor mapping for pi UI, clamping, persistence, and footer display.
 - `contextWindow`: parsed from context variant, else conservative fallback.
 - `maxTokens`: conservative explicit value until Cursor SDK exposes output limits.
-- `input`: supported input types. Use `["text", "image"]` only if the Cursor SDK path supports images for that model.
+- `input`: supported input types. The installed Cursor SDK accepts `SDKUserMessage.images`, and Cursor models are expected to support image input, so advertise `["text", "image"]`.
 - `cost`: zeroed unless reliable Cursor costs are available.
 
 The extension stores runtime metadata in an internal map keyed by registered pi model ID. That map records the Cursor base model ID, selected context param, default params, and discovered capabilities. `ProviderModelConfig` has no dedicated metadata field, so do not rely on hidden custom fields for this state.
@@ -204,7 +207,7 @@ Cursor extension controls:
 
 | Action | Preferred control | Applies when |
 |---|---:|---|
-| Toggle fast | `/cursor-fast` plus optional non-reserved shortcut | model has `fast` |
+| Toggle fast | `/cursor-fast` | model has `fast` |
 
 Do not register a shortcut for `shift+tab`. Pi reserves the native thinking keybinding, and the extension should only influence it through model metadata.
 
@@ -224,7 +227,7 @@ Mapping rules:
 
 | pi level | Cursor value preference |
 |---|---|
-| `off` | `none`, else `false`, else unsupported |
+| `off` | `none`, else `off`, else `false`, else unsupported |
 | `minimal` | `minimal`, else unsupported |
 | `low` | `low` |
 | `medium` | `medium` |
@@ -315,7 +318,7 @@ fast=false <-> fast=true
 Rules:
 
 - `fast` is extension state, not pi model identity.
-- Toggle with `/cursor-fast` and optional non-reserved shortcut.
+- Toggle with `/cursor-fast`.
 - Store per-session and global per-base-model preferences.
 - When calling `Agent.create()`, include the selected `fast` value in Cursor model params.
 - Show `fast` through `ctx.ui.setStatus()` when enabled.

@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock model-discovery before importing the extension
 vi.mock("../src/model-discovery.js", () => ({
 	discoverModels: vi.fn(),
 }));
 
-// Mock cursor-provider before importing the extension
 vi.mock("../src/cursor-provider.js", () => ({
 	streamCursor: vi.fn(),
 }));
@@ -23,6 +21,11 @@ function createMockPi() {
 		registerProvider: vi.fn((name: string, config: Record<string, unknown>) => {
 			registered.push({ name, config });
 		}),
+		registerFlag: vi.fn(),
+		registerCommand: vi.fn(),
+		on: vi.fn(),
+		getFlag: vi.fn().mockReturnValue(false),
+		appendEntry: vi.fn(),
 		_registered: registered,
 	};
 }
@@ -32,10 +35,10 @@ describe("extension factory", () => {
 		vi.clearAllMocks();
 	});
 
-	it("registers one provider with correct fields", async () => {
+	it("registers Cursor fast controls and one provider with correct fields", async () => {
 		const mockModels = [
 			{
-				id: "composer-2:fast=true",
+				id: "composer-2",
 				name: "Cursor Composer 2",
 				reasoning: false,
 				input: ["text", "image"],
@@ -49,6 +52,16 @@ describe("extension factory", () => {
 		const pi = createMockPi();
 		await extensionFactory(pi as any);
 
+		expect(pi.registerFlag).toHaveBeenCalledWith(
+			"cursor-fast",
+			expect.objectContaining({ type: "boolean", default: false }),
+		);
+		expect(pi.registerCommand).toHaveBeenCalledWith(
+			"cursor-fast",
+			expect.objectContaining({ description: expect.stringContaining("Toggle Cursor fast") }),
+		);
+		expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
+		expect(pi.on).toHaveBeenCalledWith("model_select", expect.any(Function));
 		expect(mockedDiscover).toHaveBeenCalledOnce();
 		expect(pi.registerProvider).toHaveBeenCalledOnce();
 
@@ -64,7 +77,7 @@ describe("extension factory", () => {
 	it("registers provider even with fallback models", async () => {
 		mockedDiscover.mockResolvedValueOnce([
 			{
-				id: "composer-2:fast=true",
+				id: "composer-2",
 				name: "Cursor Composer 2",
 				reasoning: false,
 				input: ["text", "image"],
@@ -73,12 +86,12 @@ describe("extension factory", () => {
 				maxTokens: 16384,
 			},
 			{
-				id: "gpt-5.5:context=1m;reasoning=medium;fast=false",
-				name: "GPT-5.5",
+				id: "gpt-5.5@1m",
+				name: "GPT-5.5 @ 1m",
 				reasoning: true,
 				input: ["text", "image"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 128000,
+				contextWindow: 1000000,
 				maxTokens: 16384,
 			},
 		]);

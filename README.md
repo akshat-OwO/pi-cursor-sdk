@@ -4,100 +4,127 @@ pi provider extension backed by `@cursor/sdk` local agents.
 
 ## What this is
 
-This package lets pi use Cursor models through the local Cursor SDK.
+This package lets pi use Cursor models through the local Cursor SDK while keeping model selection, thinking, context display, and the default footer native to pi.
 
 Current behavior:
 
 - discovers Cursor models with `Cursor.models.list()` when `CURSOR_API_KEY` is set
-- registers each model's default variant as a pi model
-- encodes default Cursor params into the pi model ID
-- maps Cursor reasoning/thinking params into pi thinking levels when possible
+- registers Cursor models under the `cursor` provider
+- registers one pi model per Cursor `context` value, using IDs like `gpt-5.5@1m`
+- maps Cursor `reasoning`, `effort`, and boolean `thinking` to pi native thinking levels
+- keeps Cursor `fast` as extension state, toggled with `/cursor-fast` or forced with `--cursor-fast`
+- shows Cursor fast mode through `ctx.ui.setStatus()` and leaves pi's default footer intact
 - creates a fresh local Cursor agent for each pi provider call
 
 ## Requirements
 
 - Node.js
 - pi
-- a `CURSOR_API_KEY`
+- a Cursor API key exposed as the `CURSOR_API_KEY` environment variable
+
+No global `@cursor/sdk` install is required. This package depends on `@cursor/sdk`, so a normal package install brings in the SDK version the extension was built and tested against.
 
 ## Install
-
-Clone the repo, then install deps:
 
 ```bash
 npm install
 ```
 
+## API key
+
+Set `CURSOR_API_KEY` in the environment before starting pi:
+
+```bash
+export CURSOR_API_KEY="your-key"
+```
+
+Or pass it for one command:
+
+```bash
+CURSOR_API_KEY="your-key" pi -e . --model cursor/gpt-5.5@1m -p "Say ok only."
+```
+
+Do not store the API key in `~/.pi/agent/cursor-sdk.json`; that file is only for non-secret extension state such as Cursor fast defaults. `PATH` is only for executable lookup and should not contain the API key.
+
 ## Run locally with pi
 
 ```bash
-CURSOR_API_KEY=your-key pi -e .
+pi -e .
 ```
 
 Pick a model with `/model`, or pass one directly:
 
 ```bash
-CURSOR_API_KEY=your-key pi -e . -p --model cursor/composer-2:fast=true "Say ok only."
+pi -e . --model cursor/gpt-5.5@1m -p "Say ok only."
 ```
 
 ## Model IDs
 
-When `CURSOR_API_KEY` is set, models come from `Cursor.models.list()`.
-Each registered pi model uses the Cursor base model ID plus the default variant params.
+Cursor-only parameters are not encoded into pi model IDs.
 
 Examples:
 
-- `cursor/composer-2:fast=true`
-- `cursor/gpt-5.5:context=1m;fast=false;reasoning=medium`
-- `cursor/claude-sonnet-4-6:context=1m;effort=medium;thinking=true`
+- `cursor/composer-2`
+- `cursor/gpt-5.5@1m`
+- `cursor/gpt-5.5@272k`
+- `cursor/claude-opus-4-7@300k`
 
-Encoding rules:
+Rules:
 
-- no params: `gemini-3.1-pro`
-- with params: `gpt-5.4:context=1m;fast=false;reasoning=medium`
-- params are sorted alphabetically
-- params use `name=value` pairs joined by `;`
-
-The extension decodes that ID back into a Cursor `ModelSelection` before calling `Agent.create()`.
-
-## Fallback models
-
-If `CURSOR_API_KEY` is missing or model discovery fails, the extension registers these fallbacks:
-
-| Model ID | Name |
-|---|---|
-| `composer-2:fast=true` | Cursor Composer 2 |
-| `gpt-5.5:context=1m;reasoning=medium;fast=false` | GPT-5.5 |
-| `claude-sonnet-4-6:context=1m;effort=medium;thinking=true` | Sonnet 4.6 |
-| `claude-opus-4-7:context=1m;effort=xhigh;thinking=true` | Opus 4.7 |
+- Cursor `context` becomes a pi-visible model variant because it changes `contextWindow`.
+- Cursor `reasoning`, `effort`, and `thinking` map to pi native thinking.
+- Cursor `fast` is extension state, not model identity.
 
 ## Thinking support
 
-If a Cursor model exposes `reasoning`, `thinking`, or `effort`, the extension sets `reasoning: true` for the pi model and builds a `thinkingLevelMap`.
+Use pi's native thinking controls:
 
-Examples:
+```bash
+pi --model cursor/gpt-5.5@1m --thinking medium -p "Say ok only"
+pi --model cursor/gpt-5.5@272k:xhigh -p "Say ok only"
+```
 
-- `reasoning=extra-high` maps to pi `xhigh`
-- `effort=max` maps to pi `xhigh`
-- boolean `thinking=true|false` maps to pi on/off-style thinking
+The extension builds Cursor SDK params from the selected pi thinking level:
 
-At request time, pi's selected thinking level overrides the encoded Cursor reasoning params sent to the SDK.
+- `reasoning=none|low|medium|high|extra-high`
+- `effort=low|medium|high|xhigh|max`
+- `thinking=false|true` for boolean thinking models
+
+For Claude models with both `thinking` and `effort`, pi thinking `off` sends `thinking=false` and omits `effort`.
+
+## Fast mode
+
+Use `/cursor-fast` to toggle fast mode for the selected Cursor model when supported.
+
+Fast preferences are stored:
+
+- in the current session with `pi.appendEntry()`
+- globally per Cursor base model in `~/.pi/agent/cursor-sdk.json`
+
+For one print-mode run:
+
+```bash
+pi --model cursor/gpt-5.5@1m --cursor-fast -p "Say ok only"
+```
+
+When fast is enabled, the default pi footer gets an extension status line:
+
+```text
+cursor fast
+```
 
 ## Images
 
-Images from the latest user message are forwarded to Cursor.
-Historical images are kept out of the transcript.
+Images from the latest user message are forwarded to Cursor. Historical images are kept out of the transcript. The extension advertises `text` and `image` input for Cursor models because Cursor's SDK accepts image messages and Cursor models are expected to support them.
 
-## How it works
+## Fallback models
 
-For each pi provider call, the extension:
+If `CURSOR_API_KEY` is missing or model discovery fails, the extension registers conservative fallback Cursor models with the same native shape:
 
-1. builds a plain-text prompt from pi conversation state
-2. creates a fresh local Cursor agent for the current working directory
-3. streams text and thinking deltas back into pi
-4. disposes the Cursor agent
-
-pi remains the source of truth for conversation history.
+- `composer-2`
+- `gpt-5.5@1m`, `gpt-5.5@272k`
+- `claude-sonnet-4-6@1m`, `claude-sonnet-4-6@300k`
+- `claude-opus-4-7@1m`, `claude-opus-4-7@300k`
 
 ## Limits
 
@@ -105,12 +132,7 @@ pi remains the source of truth for conversation history.
 - Cursor tool calls are not exposed as pi tool calls
 - pi tool schemas are not passed through to Cursor
 - one fresh Cursor agent per provider call
-- only the default Cursor variant is auto-registered
-- historical images are not replayed to Cursor
-
-## License
-
-MIT.
+- Cursor SDK model metadata does not currently expose output token limits, so the extension uses conservative token defaults
 
 ## Development
 
@@ -121,7 +143,6 @@ npm test
 npm run typecheck
 ```
 
-## Notes
+## License
 
-- `docs/cursor-model-ux-spec.md` is a forward-looking design spec, not a description of the exact current implementation.
-- Unknown or invalid model params are passed through to Cursor and may be rejected by the Cursor SDK.
+MIT
