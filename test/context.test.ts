@@ -25,6 +25,25 @@ describe("buildCursorPrompt", () => {
 		expect(result.text).toContain("Assistant: Hi there");
 	});
 
+	it("defensively formats assistant string content", () => {
+		const ctx: Context = {
+			messages: [
+				{
+					role: "assistant",
+					content: "Legacy assistant text",
+					api: "cursor-sdk",
+					provider: "cursor",
+					model: "test",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					stopReason: "stop",
+					timestamp: 2,
+				} as unknown as AssistantMessage,
+			],
+		};
+		const result = buildCursorPrompt(ctx);
+		expect(result.text).toContain("Assistant: Legacy assistant text");
+	});
+
 	it("omits thinking content from transcript", () => {
 		const ctx: Context = {
 			messages: [
@@ -61,7 +80,57 @@ describe("buildCursorPrompt", () => {
 			],
 		};
 		const result = buildCursorPrompt(ctx);
-		expect(result.text).toContain("Tool result (bash): output here");
+		expect(result.text).toContain("Tool result (bash, call tc1): output here");
+	});
+
+	it("formats tool errors", () => {
+		const ctx: Context = {
+			messages: [
+				{ role: "user", content: "Run it", timestamp: 1 } satisfies UserMessage,
+				{
+					role: "toolResult",
+					toolCallId: "tc1",
+					toolName: "bash",
+					content: [{ type: "text", text: "command failed" }],
+					isError: true,
+					timestamp: 2,
+				} satisfies ToolResultMessage,
+			],
+		};
+		const result = buildCursorPrompt(ctx);
+		expect(result.text).toContain("Tool error (bash, call tc1): command failed");
+	});
+
+	it("formats assistant tool calls before tool results", () => {
+		const ctx: Context = {
+			messages: [
+				{ role: "user", content: "List files", timestamp: 1 } satisfies UserMessage,
+				{
+					role: "assistant",
+					content: [
+						{ type: "text", text: "I will inspect the directory." },
+						{ type: "toolCall", id: "tc1", name: "bash", arguments: { command: "ls" } },
+					],
+					api: "cursor-sdk",
+					provider: "cursor",
+					model: "test",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					stopReason: "toolUse",
+					timestamp: 2,
+				} satisfies AssistantMessage,
+				{
+					role: "toolResult",
+					toolCallId: "tc1",
+					toolName: "bash",
+					content: [{ type: "text", text: "README.md" }],
+					isError: false,
+					timestamp: 3,
+				} satisfies ToolResultMessage,
+			],
+		};
+		const result = buildCursorPrompt(ctx);
+		expect(result.text).toContain("Assistant: I will inspect the directory.\nTool call (bash, call tc1): {\"command\":\"ls\"}");
+		expect(result.text).toContain("Tool result (bash, call tc1): README.md");
 	});
 
 	it("extracts images from latest user message only", () => {

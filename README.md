@@ -62,6 +62,10 @@ pi -e . --model cursor/gpt-5.5@1m -p "Say ok only."
 
 Cursor-only parameters are not encoded into pi model IDs.
 
+For models where `Cursor.models.list()` exposes a `context` parameter, the extension parses that context value directly. For models where the catalog does not include a context parameter, the extension ships a bundled SDK-derived default/non-Max context-window cache generated from `createAgentPlatform().checkpointStore.loadLatest(agentId).tokenDetails.maxTokens`. Successful runs can update a local override cache, but model discovery does not probe models at startup.
+
+Max Mode has larger context windows, but `@cursor/sdk` 1.0.12 does not expose a public `ModelSelection` field that enables Max Mode for these local agent runs. The extension therefore does not advertise Max Mode windows for non-Max model IDs. Add Max-specific pi model IDs only when the SDK exposes an exact Max Mode selector and the implementation uses that selector.
+
 Examples:
 
 - `cursor/composer-2`
@@ -135,9 +139,11 @@ If `CURSOR_API_KEY` is missing or model discovery fails, the extension registers
 ## Limits
 
 - local agents only; no Cursor cloud agent support
-- Cursor tool calls are not exposed as pi tool calls
+- Cursor tool calls are not exposed as pi tool calls; Cursor-side tool activity is surfaced as compact trace text before the final answer
 - pi tool schemas are not passed through to Cursor
+- Cursor text deltas are buffered until Cursor trace/tool activity is complete so the final answer does not appear before its trace
 - one fresh Cursor agent per provider call
+- ambient Cursor setting/rule layers are not loaded by default because the current Cursor SDK writes setting-load logs directly to terminal output, which corrupts pi's TUI
 - Cursor SDK model metadata does not currently expose output token limits, so the extension uses conservative token defaults
 
 ## Development

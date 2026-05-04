@@ -1,4 +1,4 @@
-import type { Context, Message } from "@mariozechner/pi-ai";
+import type { Context, Message, ToolCall } from "@mariozechner/pi-ai";
 import type { SDKImage } from "@cursor/sdk";
 
 export interface CursorPrompt {
@@ -12,6 +12,10 @@ function isTextBlock(block: { type: string }): block is { type: "text"; text: st
 
 function isImageBlock(block: { type: string }): block is { type: "image"; data: string; mimeType: string } {
 	return block.type === "image";
+}
+
+function isToolCallBlock(block: { type: string }): block is ToolCall {
+	return block.type === "toolCall";
 }
 
 function extractLatestImages(messages: Message[]): SDKImage[] {
@@ -32,7 +36,7 @@ function extractLatestImages(messages: Message[]): SDKImage[] {
 	return [];
 }
 
-function formatUserContent(content: string | { type: string; text?: string; data?: string; mimeType?: string }[]): string {
+function formatContentBlocks(content: string | { type: string; text?: string; data?: string; mimeType?: string }[]): string {
 	if (typeof content === "string") return content;
 	return content
 		.map((block) => {
@@ -42,6 +46,11 @@ function formatUserContent(content: string | { type: string; text?: string; data
 		})
 		.filter(Boolean)
 		.join("\n");
+}
+
+function formatToolCall(toolCall: ToolCall): string {
+	const args = JSON.stringify(toolCall.arguments);
+	return `Tool call (${toolCall.name}, call ${toolCall.id}): ${args}`;
 }
 
 export function buildCursorPrompt(context: Context): CursorPrompt {
@@ -54,15 +63,19 @@ export function buildCursorPrompt(context: Context): CursorPrompt {
 	for (const msg of context.messages) {
 		switch (msg.role) {
 			case "user": {
-				const text = formatUserContent(msg.content);
+				const text = formatContentBlocks(msg.content);
 				if (text) parts.push(`User: ${text}`);
 				break;
 			}
 			case "assistant": {
-				const blocks = typeof msg.content === "string" ? [{ type: "text" as const, text: msg.content }] : msg.content;
+				const blocks = Array.isArray(msg.content) ? msg.content : [{ type: "text" as const, text: String(msg.content) }];
 				const textParts: string[] = [];
 				for (const block of blocks) {
-					if (isTextBlock(block)) textParts.push(block.text);
+					if (isTextBlock(block)) {
+						textParts.push(block.text);
+					} else if (isToolCallBlock(block)) {
+						textParts.push(formatToolCall(block));
+					}
 					// Omit thinking content from transcript
 				}
 				if (textParts.length > 0) {
@@ -71,8 +84,9 @@ export function buildCursorPrompt(context: Context): CursorPrompt {
 				break;
 			}
 			case "toolResult": {
-				const text = formatUserContent(msg.content);
-				parts.push(`Tool result (${msg.toolName}): ${text}`);
+				const text = formatContentBlocks(msg.content);
+				const label = msg.isError ? "Tool error" : "Tool result";
+				parts.push(`${label} (${msg.toolName}, call ${msg.toolCallId}): ${text}`);
 				break;
 			}
 		}

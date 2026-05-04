@@ -13,6 +13,10 @@ Current implementation notes:
 - Installed `@cursor/sdk` user messages accept images, and Cursor models are treated as image-capable; registered input metadata is `text` plus `image`.
 - `@cursor/sdk` is a package dependency of this extension; users should not need a global SDK install.
 - Cursor auth uses the `CURSOR_API_KEY` environment variable. The extension config file stores only non-secret Cursor-only state such as fast defaults.
+- Local agents do not pass `settingSources` by default because the current Cursor SDK writes setting/rule loading INFO logs directly to terminal output, which corrupts pi's TUI.
+- Cursor-side thinking and tool activity are surfaced as trace content before final text. Cursor text deltas are buffered until the run finishes so the saved message order is trace first, final answer second.
+- For models without a catalog `context` parameter, context windows are not hardcoded. The extension ships a bundled SDK-derived default/non-Max cache generated from `createAgentPlatform().checkpointStore.loadLatest(agentId).tokenDetails.maxTokens`. Successful runs can update a local override cache, but model discovery does not probe models at startup.
+- Max Mode context windows are distinct from default/non-Max context windows. `@cursor/sdk` 1.0.12 exposes internal protobuf fields named `maxMode`/`max_mode`, but the public `ModelSelection` type and the local executor path do not pass a Max Mode selector for local agent runs. Do not advertise Max Mode context windows unless the SDK catalog exposes an exact parameter/variant or the SDK public API adds a Max Mode selector that the extension actually sends.
 
 ## Goal
 

@@ -115,6 +115,21 @@ describe("Cursor fast state", () => {
 		});
 	});
 
+	it("does not update fast state when the global config cannot be saved", async () => {
+		const blockedAgentDir = join(tmpAgentDir, "not-a-directory");
+		writeFileSync(blockedAgentDir, "x");
+		process.env.PI_CODING_AGENT_DIR = blockedAgentDir;
+		const { pi, ctx, commands, handlers } = createHarness({ modelId: "composer-2" });
+		await handlers.get("session_start")({}, ctx);
+
+		await commands.get("cursor-fast").handler("", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Failed to save Cursor fast preference"), "error");
+		expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("cursor", "cursor fast");
+		expect(getEffectiveFastForModelId("composer-2")).toBe(true);
+		expect(pi.appendEntry).not.toHaveBeenCalled();
+	});
+
 	it("restores fast state from the active session branch", async () => {
 		const { ctx, handlers } = createHarness({
 			modelId: "composer-2",

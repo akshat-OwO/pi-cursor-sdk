@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
 	discoverModels,
@@ -6,6 +9,7 @@ import {
 	getCursorModelMetadataEntries,
 	__testUtils,
 } from "../src/model-discovery.js";
+import { saveCachedContextWindow } from "../src/context-window-cache.js";
 
 vi.mock("@cursor/sdk", () => ({
 	Cursor: {
@@ -178,6 +182,53 @@ describe("discoverModels", () => {
 			{ id: "reasoning", value: "high" },
 			{ id: "fast", value: "true" },
 		]);
+	});
+
+	it("uses bundled SDK-derived context windows for models without context params", async () => {
+		const tmpAgentDir = mkdtempSync(join(tmpdir(), "pi-cursor-context-window-bundled-"));
+		process.env.PI_CODING_AGENT_DIR = tmpAgentDir;
+		try {
+			process.env.CURSOR_API_KEY = "test-key-123";
+			mockedList.mockResolvedValueOnce([
+				{
+					id: "composer-2",
+					displayName: "Composer 2",
+					parameters: [{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] }],
+					variants: [{ params: [{ id: "fast", value: "true" }], displayName: "Composer 2", isDefault: true }],
+				},
+			]);
+
+			const models = await discoverModels();
+
+			expect(models[0].id).toBe("composer-2");
+			expect(models[0].contextWindow).toBe(200000);
+		} finally {
+			rmSync(tmpAgentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("lets user cache override bundled context windows", async () => {
+		const tmpAgentDir = mkdtempSync(join(tmpdir(), "pi-cursor-context-window-"));
+		process.env.PI_CODING_AGENT_DIR = tmpAgentDir;
+		try {
+			saveCachedContextWindow("composer-2", 201000);
+			process.env.CURSOR_API_KEY = "test-key-123";
+			mockedList.mockResolvedValueOnce([
+				{
+					id: "composer-2",
+					displayName: "Composer 2",
+					parameters: [{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] }],
+					variants: [{ params: [{ id: "fast", value: "true" }], displayName: "Composer 2", isDefault: true }],
+				},
+			]);
+
+			const models = await discoverModels();
+
+			expect(models[0].id).toBe("composer-2");
+			expect(models[0].contextWindow).toBe(201000);
+		} finally {
+			rmSync(tmpAgentDir, { recursive: true, force: true });
+		}
 	});
 
 	it("sets reasoning false for models without thinking controls", async () => {

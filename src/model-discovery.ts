@@ -7,6 +7,7 @@ import type {
 } from "@cursor/sdk";
 import type { ProviderModelConfig } from "@mariozechner/pi-coding-agent";
 import type { ModelThinkingLevel, ThinkingLevelMap } from "@mariozechner/pi-ai";
+import { getCachedContextWindow } from "./context-window-cache.js";
 
 const FALLBACK_CONTEXT_WINDOW = 128000;
 const FALLBACK_MAX_TOKENS = 16384;
@@ -289,6 +290,11 @@ function getModelName(item: ModelListItem, context?: string): string {
 	return context ? `${displayName} @ ${context}` : displayName;
 }
 
+function getContextWindow(piModelId: string, context?: string): number {
+	if (context) return parseContextWindow(context) ?? FALLBACK_CONTEXT_WINDOW;
+	return getCachedContextWindow(piModelId) ?? FALLBACK_CONTEXT_WINDOW;
+}
+
 function toMetadata(
 	item: ModelListItem,
 	piModelId: string,
@@ -303,7 +309,7 @@ function toMetadata(
 		displayName: item.displayName || item.id,
 		defaultParams: cloneParams(defaultParams),
 		...(context ? { context } : {}),
-		contextWindow: context ? parseContextWindow(context) ?? FALLBACK_CONTEXT_WINDOW : FALLBACK_CONTEXT_WINDOW,
+		contextWindow: getContextWindow(piModelId, context),
 		supportsFast: getParameter(item, "fast") !== undefined,
 		defaultFast: fastValue === "true",
 		supportsReasoning: thinkingLevelMap !== undefined,
@@ -331,10 +337,13 @@ function toModelConfig(metadata: CursorModelMetadata, name: string): ProviderMod
 	};
 }
 
+function getContextValues(item: ModelListItem): string[] {
+	return getParameter(item, "context")?.values.map((value) => value.value) ?? [];
+}
+
 function toModelConfigs(item: ModelListItem): ProviderModelConfig[] {
 	const defaultParams = getDefaultParams(item);
-	const contextParameter = getParameter(item, "context");
-	const contextValues = contextParameter?.values.map((value) => value.value) ?? [];
+	const contextValues = getContextValues(item);
 	const contexts = contextValues.length > 0 ? contextValues : [undefined];
 
 	return contexts.map((context) => {

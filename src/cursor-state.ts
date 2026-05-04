@@ -92,11 +92,27 @@ function getCurrentCursorMetadata(ctx: ExtensionContext) {
 	return getCursorModelMetadata(model.id);
 }
 
+function restoreMapValue(map: Map<string, boolean>, key: string, previous: boolean | undefined): void {
+	if (previous === undefined) {
+		map.delete(key);
+	} else {
+		map.set(key, previous);
+	}
+}
+
 function persistFastPreference(pi: ExtensionAPI, baseModelId: string, fast: boolean): void {
+	const previousSession = sessionFastPreferences.get(baseModelId);
+	const previousGlobal = globalFastPreferences.get(baseModelId);
 	sessionFastPreferences.set(baseModelId, fast);
 	globalFastPreferences.set(baseModelId, fast);
+	try {
+		saveGlobalFastPreferences();
+	} catch (error) {
+		restoreMapValue(sessionFastPreferences, baseModelId, previousSession);
+		restoreMapValue(globalFastPreferences, baseModelId, previousGlobal);
+		throw error;
+	}
 	pi.appendEntry<CursorFastEntryData>(FAST_ENTRY_TYPE, { baseModelId, fast });
-	saveGlobalFastPreferences();
 }
 
 export function getEffectiveFastForModelId(modelId: string): boolean | undefined {
@@ -128,7 +144,13 @@ export function registerCursorFastControls(pi: ExtensionAPI): void {
 
 			const current = getEffectiveFast(metadata.baseModelId, metadata.piModelId) ?? false;
 			const next = !current;
-			persistFastPreference(pi, metadata.baseModelId, next);
+			try {
+				persistFastPreference(pi, metadata.baseModelId, next);
+			} catch (error) {
+				updateCursorStatus(ctx);
+				ctx.ui.notify(`Failed to save Cursor fast preference: ${error instanceof Error ? error.message : String(error)}`, "error");
+				return;
+			}
 			updateCursorStatus(ctx);
 			ctx.ui.notify(`Cursor fast ${next ? "enabled" : "disabled"}`, "info");
 		},

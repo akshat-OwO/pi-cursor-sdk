@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock @cursor/sdk before importing the module under test
@@ -6,28 +9,38 @@ vi.mock("@cursor/sdk", () => {
 	const mockDispose = vi.fn().mockResolvedValue(undefined);
 
 	const mockAgent = {
+		agentId: "agent-1",
 		send: vi.fn(),
 		[Symbol.asyncDispose]: mockDispose,
+	};
+	const mockPlatform = {
+		checkpointStore: {
+			loadLatest: vi.fn().mockResolvedValue(undefined),
+		},
 	};
 
 	return {
 		Agent: {
 			create: vi.fn().mockResolvedValue(mockAgent),
 		},
+		createAgentPlatform: vi.fn().mockResolvedValue(mockPlatform),
 		_mockAgent: mockAgent,
 		_mockCancel: mockCancel,
 		_mockDispose: mockDispose,
+		_mockPlatform: mockPlatform,
 	};
 });
 
-import { Agent } from "@cursor/sdk";
+import { Agent, createAgentPlatform } from "@cursor/sdk";
 import { streamCursor } from "../src/cursor-provider.js";
 import { __testUtils as modelDiscoveryTestUtils } from "../src/model-discovery.js";
+import { __testUtils as contextWindowCacheTestUtils } from "../src/context-window-cache.js";
 import type { ModelListItem } from "@cursor/sdk";
 import type { Context, Model } from "@mariozechner/pi-ai";
 
 // Access the mocks via the module
 const mockedCreate = vi.mocked(Agent.create);
+const mockedCreateAgentPlatform = vi.mocked(createAgentPlatform);
 
 function makeModel(id = "test-model"): Model<"cursor-sdk"> {
 	return {
@@ -138,9 +151,15 @@ describe("streamCursor", () => {
 		modelDiscoveryTestUtils.registerModelItems(cursorModelItems);
 		// Re-setup default mock return after clearing
 		mockedCreate.mockResolvedValue({
+			agentId: "agent-1",
 			send: vi.fn(),
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
+		mockedCreateAgentPlatform.mockResolvedValue({
+			checkpointStore: {
+				loadLatest: vi.fn().mockResolvedValue(undefined),
+			},
+		} as any);
 	});
 
 	it("emits text deltas as pi text stream events", async () => {
@@ -207,8 +226,8 @@ describe("streamCursor", () => {
 
 	it("does not emit pi tool call events for cursor tool deltas", async () => {
 		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
-			opts.onDelta({ update: { type: "tool-call-started", name: "read_file", callId: "c1" } });
-			opts.onDelta({ update: { type: "tool-call-completed", name: "read_file", callId: "c1" } });
+			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "read_file" }, callId: "c1" } });
+			opts.onDelta({ update: { type: "tool-call-completed", toolCall: { name: "read_file" }, callId: "c1" } });
 			opts.onDelta({ update: { type: "text-delta", text: "done" } });
 			return {
 				id: "run-1",
@@ -232,6 +251,130 @@ describe("streamCursor", () => {
 			["toolcall_start", "toolcall_delta", "toolcall_end"].includes(e.type),
 		);
 		expect(toolEvents).toHaveLength(0);
+	});
+
+	it("surfaces cursor tool activity in the trace without polluting final text", async () => {
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
+			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "list_dir" }, callId: "c1" } });
+			opts.onDelta({ update: { type: "tool-call-completed", toolCall: { name: "list_dir", result: { files: ["README.md"] } }, callId: "c1" } });
+			opts.onDelta({ update: { type: "summary", summary: "Inspected files" } });
+			opts.onDelta({ update: { type: "text-delta", text: "done" } });
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "finished",
+				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "test-key" });
+		const events = await collectEvents(stream);
+		const trace = events.filter((e: any) => e.type === "thinking_delta").map((e: any) => e.delta).join("");
+		const text = events.filter((e: any) => e.type === "text_delta").map((e: any) => e.delta).join("");
+		const done = events.find((e: any) => e.type === "done") as any;
+
+		expect(trace).toContain("Cursor tool started (list_dir, call c1)");
+		expect(trace).toContain("Cursor tool completed (list_dir, call c1)");
+		expect(trace).not.toContain("README.md");
+		expect(trace).toContain("Cursor summary: Inspected files");
+		expect(text).toBe("done");
+		expect(done.message.content.map((block: any) => block.type)).toEqual(["thinking", "text"]);
+	});
+
+	it("keeps late cursor thinking before final text in the saved content order", async () => {
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
+			opts.onDelta({ update: { type: "text-delta", text: "Final answer" } });
+			opts.onDelta({ update: { type: "thinking-delta", text: "late trace" } });
+			opts.onDelta({ update: { type: "thinking-completed" } });
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "finished",
+				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "test-key" });
+		const events = await collectEvents(stream);
+		const done = events.find((e: any) => e.type === "done") as any;
+
+		expect(done.message.content).toEqual([
+			{ type: "thinking", thinking: "late trace" },
+			{ type: "text", text: "Final answer" },
+		]);
+	});
+
+	it("updates usage from cursor turn-ended events", async () => {
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
+			opts.onDelta({
+				update: {
+					type: "turn-ended",
+					usage: { inputTokens: 10, outputTokens: 7, cacheReadTokens: 3, cacheWriteTokens: 2 },
+				},
+			});
+			opts.onDelta({ update: { type: "text-delta", text: "done" } });
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "finished",
+				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "test-key" });
+		const events = await collectEvents(stream);
+		const done = events.find((e: any) => e.type === "done") as any;
+
+		expect(done.message.usage).toMatchObject({
+			input: 10,
+			output: 7,
+			cacheRead: 3,
+			cacheWrite: 2,
+			totalTokens: 22,
+		});
+	});
+
+	it("aborts after agent creation without sending a prompt when already cancelled", async () => {
+		const controller = new AbortController();
+		const mockDispose = vi.fn().mockResolvedValue(undefined);
+		const mockSend = vi.fn();
+		mockedCreate.mockImplementation(async () => {
+			controller.abort();
+			return {
+				send: mockSend,
+				[Symbol.asyncDispose]: mockDispose,
+			};
+		});
+
+		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "test-key", signal: controller.signal });
+		const events = await collectEvents(stream);
+		const error = events.find((e: any) => e.type === "error") as any;
+
+		expect(error.reason).toBe("aborted");
+		expect(error.error.stopReason).toBe("aborted");
+		expect(mockSend).not.toHaveBeenCalled();
+		expect(mockDispose).toHaveBeenCalledTimes(1);
 	});
 
 	it("emits error when no API key", async () => {
@@ -372,6 +515,69 @@ describe("streamCursor", () => {
 				images: [{ data: "base64-image", mimeType: "image/png" }],
 			}),
 			expect.any(Object),
+		);
+	});
+
+	it("caches SDK checkpoint context windows after successful runs", async () => {
+		const tmpAgentDir = mkdtempSync(join(tmpdir(), "pi-cursor-provider-context-window-"));
+		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = tmpAgentDir;
+		try {
+			const loadLatest = vi.fn().mockResolvedValue({ tokenDetails: { usedTokens: 8435, maxTokens: 201000 } });
+			mockedCreateAgentPlatform.mockResolvedValue({ checkpointStore: { loadLatest } } as any);
+			const mockSend = vi.fn().mockResolvedValue({
+				id: "run-1",
+				agentId: "agent-1",
+				status: "finished",
+				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: "ok" }),
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			});
+			mockedCreate.mockResolvedValue({
+				agentId: "agent-ctx",
+				send: mockSend,
+				[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+			});
+
+			const stream = streamCursor(makeModel("composer-2"), makeContext(), { apiKey: "test-key" });
+			await collectEvents(stream);
+
+			expect(loadLatest).toHaveBeenCalledWith("agent-ctx");
+			const cache = JSON.parse(readFileSync(contextWindowCacheTestUtils.getCachePath(), "utf-8"));
+			expect(cache.contextWindows["composer-2"]).toBe(201000);
+		} finally {
+			if (originalAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+			}
+			rmSync(tmpAgentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("creates local Cursor agents without ambient setting sources that write SDK logs to the terminal", async () => {
+		const mockSend = vi.fn().mockResolvedValue({
+			id: "run-1",
+			agentId: "agent-1",
+			status: "finished",
+			wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+			cancel: vi.fn(),
+			supports: () => true,
+			unsupportedReason: () => undefined,
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const stream = streamCursor(makeModel("composer-2"), makeContext(), { apiKey: "test-key" });
+		await collectEvents(stream);
+
+		expect(mockedCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				local: { cwd: process.cwd() },
+			}),
 		);
 	});
 
