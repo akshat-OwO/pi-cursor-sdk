@@ -41,7 +41,8 @@ export function loadContextWindowCache(): Map<string, number> {
 }
 
 export function getCachedContextWindow(modelId: string): number | undefined {
-	return loadContextWindowCache().get(modelId);
+	const cache = loadContextWindowCache();
+	return cache.get(modelId) ?? cache.get("default");
 }
 
 export function getCheckpointContextWindow(checkpoint: unknown): number | undefined {
@@ -56,7 +57,8 @@ export function getCheckpointContextWindow(checkpoint: unknown): number | undefi
 export function saveCachedContextWindow(modelId: string, contextWindow: number): void {
 	if (!isPositiveInteger(contextWindow)) return;
 	const overrides = loadUserContextWindowOverrides();
-	const bundledContextWindow = BUNDLED_CONTEXT_WINDOWS[modelId as keyof typeof BUNDLED_CONTEXT_WINDOWS];
+	const bundledContextWindow =
+		BUNDLED_CONTEXT_WINDOWS[modelId as keyof typeof BUNDLED_CONTEXT_WINDOWS] ?? BUNDLED_CONTEXT_WINDOWS.default;
 	if (bundledContextWindow === contextWindow) {
 		if (!overrides.has(modelId)) return;
 		overrides.delete(modelId);

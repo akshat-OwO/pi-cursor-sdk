@@ -1,6 +1,6 @@
 {
   "name": "pi-cursor-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "pi provider extension backed by @cursor/sdk local agents",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "url": "https://github.com/fitchmultz/pi-cursor-sdk/issues"
   },
   "homepage": "https://github.com/fitchmultz/pi-cursor-sdk#readme",
-  "files": ["src", "README.md", "docs", "LICENSE", "CHANGELOG.md"],
+  "files": ["src", "README.md", "docs/cursor-model-ux-spec.md", "LICENSE", "CHANGELOG.md"],
   "type": "module",
   "engines": {
     "node": ">=18"

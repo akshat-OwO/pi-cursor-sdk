@@ -472,8 +472,12 @@ describe("streamCursor", () => {
 		expect(mockDispose).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not leak API key in error messages", async () => {
-		const mockSend = vi.fn().mockRejectedValue(new Error("boom"));
+	it("redacts common secret-bearing fields in Cursor SDK error messages", async () => {
+		const mockSend = vi.fn().mockRejectedValue(
+			new Error(
+				'request failed {"apiKey":"super-secret-key-12345","token":"token-value","session_id":"session-value"} cookie: foo=bar; baz=qux',
+			),
+		);
 		mockedCreate.mockResolvedValue({
 			send: mockSend,
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
@@ -482,9 +486,17 @@ describe("streamCursor", () => {
 		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "super-secret-key-12345" });
 		const events = await collectEvents(stream);
 
-		const error = events.find((e: any) => e.type === "error");
-		const errorText = JSON.stringify(error);
-		expect(errorText).not.toContain("super-secret-key-12345");
+		const error = events.find((e: any) => e.type === "error") as any;
+		const message = error.error.errorMessage;
+		expect(message).toContain('"apiKey":"[redacted]"');
+		expect(message).toContain('"token":"[redacted]"');
+		expect(message).toContain('"session_id":"[redacted]"');
+		expect(message).toContain("cookie: [redacted]");
+		expect(message).not.toContain("super-secret-key-12345");
+		expect(message).not.toContain("token-value");
+		expect(message).not.toContain("session-value");
+		expect(message).not.toContain("foo=bar");
+		expect(message).not.toContain("baz=qux");
 	});
 
 	it("cancels run on abort signal", async () => {

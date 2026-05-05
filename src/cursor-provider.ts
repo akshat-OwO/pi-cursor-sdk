@@ -61,11 +61,11 @@ function scrubSensitiveText(text: string, apiKey?: string): string {
 	}
 	return scrubbed
 		.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-		.replace(/(authorization\s*[:=]\s*)[^\s,;}]+/gi, "$1[redacted]")
-		.replace(/(api[_-]?key\s*[:=]\s*)[^\s,;}]+/gi, "$1[redacted]")
-		.replace(/(token\s*[:=]\s*)[^\s,;}]+/gi, "$1[redacted]")
-		.replace(/(cookie\s*[:=]\s*)[^\n]+/gi, "$1[redacted]")
-		.replace(/(session\s*[:=]\s*)[^\s,;}]+/gi, "$1[redacted]");
+		.replace(/((?:^|[\s,{])cookie["']?\s*[:=]\s*["']?)[^\n]+/gi, "$1[redacted]")
+		.replace(
+			/((?:authorization|api[_-]?key|apiKey|token|session(?:[_-]?id)?)["']?\s*[:=]\s*["']?)[^"'\s,;}]+/gi,
+			"$1[redacted]",
+		);
 }
 
 function isGenericErrorMessage(message: string): boolean {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.1 - 2026-05-05
+
+### Fixed
+
+- Use the bundled default context window for newly discovered Cursor models that do not expose a catalog `context` parameter.
+- Redact more Cursor SDK error formats, including JSON-style `apiKey`, `token`, `session_id`, and multi-pair cookie values.
+
+### Changed
+
+- Keep local demo-script notes out of the published npm tarball.
+
 ## 0.1.0 - 2026-05-04
 
 Initial public release.
