@@ -298,6 +298,41 @@ describe("streamCursor", () => {
 		expect(done.message.content.map((block: any) => block.type)).toEqual(["thinking", "thinking", "text"]);
 	});
 
+	it("uses Cursor onStep tool-call results when delta tool completion is absent", async () => {
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onStep: (a: unknown) => void }) => {
+			opts.onStep({
+				step: {
+					type: "toolCall",
+					message: {
+						type: "read",
+						args: { path: "README.md" },
+						result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+					},
+				},
+			});
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "finished",
+				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: "done" }),
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "test-key" });
+		const events = await collectEvents(stream);
+		const trace = events.filter((e: any) => e.type === "thinking_delta").map((e: any) => e.delta).join("");
+
+		expect(trace).toContain("read README.md");
+		expect(trace).toContain("# pi-cursor-sdk");
+	});
+
 	it("prefers the final run result over intermediate cursor progress text", async () => {
 		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
 			opts.onDelta({ update: { type: "text-delta", text: "I’m checking files." } });

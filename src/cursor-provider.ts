@@ -13,7 +13,8 @@ import { buildCursorPrompt, type CursorPrompt } from "./context.js";
 import { getEffectiveFastForModelId } from "./cursor-state.js";
 import { buildCursorModelSelection } from "./model-discovery.js";
 import { getCheckpointContextWindow, saveCachedContextWindow } from "./context-window-cache.js";
-import { formatCursorToolTranscript, mergeCursorToolCalls } from "./cursor-tool-transcript.js";
+import { buildCursorPiToolDisplay, formatCursorToolTranscript, mergeCursorToolCalls } from "./cursor-tool-transcript.js";
+import { isCursorNativeToolDisplayEnabled, recordCursorNativeToolDisplay } from "./cursor-native-tool-display.js";
 
 function makeInitialMessage(model: Model<Api>): AssistantMessage {
 	return {
@@ -154,6 +155,15 @@ function hasUsableText(value: string | undefined): value is string {
 	return typeof value === "string" && value.trim().length > 0;
 }
 
+function scrubDisplayValue(value: unknown, apiKey?: string): unknown {
+	if (typeof value === "string") return scrubSensitiveText(value, apiKey);
+	if (Array.isArray(value)) return value.map((entry) => scrubDisplayValue(entry, apiKey));
+	if (value && typeof value === "object") {
+		return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, scrubDisplayValue(entry, apiKey)]));
+	}
+	return value;
+}
+
 export function streamCursor(
 	model: Model<Api>,
 	context: Context,
@@ -198,8 +208,10 @@ export function streamCursor(
 			let thinkingContentIndex = -1;
 			let activityTraceChars = 0;
 			let activityTraceTruncated = false;
+			let nativeToolDisplayCounter = 0;
 			const textDeltas: string[] = [];
 			const startedToolCalls = new Map<string, unknown>();
+			const completedToolFingerprints = new Set<string>();
 
 			const appendBufferedTextDelta = (text: string): void => {
 				textDeltas.push(text);
@@ -283,6 +295,33 @@ export function streamCursor(
 				return block.text;
 			};
 
+			const getToolFingerprint = (toolCall: unknown): string => {
+				try {
+					return JSON.stringify(toolCall);
+				} catch {
+					return String(toolCall);
+				}
+			};
+
+			const handleCompletedToolCall = (toolCall: unknown): void => {
+				const fingerprint = getToolFingerprint(toolCall);
+				if (completedToolFingerprints.has(fingerprint)) return;
+				completedToolFingerprints.add(fingerprint);
+
+				const transcript = scrubSensitiveText(formatCursorToolTranscript(toolCall, { cwd }), resolvedApiKey);
+				if (isCursorNativeToolDisplayEnabled()) {
+					const display = buildCursorPiToolDisplay(toolCall, { cwd });
+					recordCursorNativeToolDisplay({
+						...display,
+						id: `cursor-tool-${++nativeToolDisplayCounter}`,
+						args: scrubDisplayValue(display.args, resolvedApiKey) as Record<string, unknown>,
+						result: scrubDisplayValue(display.result, resolvedApiKey) as typeof display.result,
+					});
+				} else {
+					appendTraceBlock(transcript || `Cursor tool: ${formatCursorToolName(toolCall)} completed`);
+				}
+			};
+
 			const onDelta = (args: { update: InteractionUpdate }): void => {
 				const update = args.update;
 
@@ -297,8 +336,7 @@ export function streamCursor(
 				} else if (update.type === "tool-call-completed") {
 					const mergedToolCall = mergeCursorToolCalls(startedToolCalls.get(update.callId), update.toolCall);
 					startedToolCalls.delete(update.callId);
-					const transcript = scrubSensitiveText(formatCursorToolTranscript(mergedToolCall, { cwd }), resolvedApiKey);
-					appendTraceBlock(transcript || `Cursor tool: ${formatCursorToolName(mergedToolCall)} completed`);
+					handleCompletedToolCall(mergedToolCall);
 				} else if (update.type === "summary") {
 					appendTraceLine(`Cursor summary: ${truncateSingleLine(update.summary)}`);
 				}
@@ -306,6 +344,13 @@ export function streamCursor(
 				// cumulative internal agent/tool/cache tokens, not the replayable pi prompt context.
 				// partial-tool-call, summary-started, summary-completed, turn-ended,
 				// shell-output-delta, token-delta, step-* are intentionally not surfaced.
+			};
+
+			const onStep = (args: { step: unknown }): void => {
+				const step = getObjectField(args.step, "message") ? args.step : undefined;
+				if (getObjectField(args.step, "type") !== "toolCall") return;
+				const toolCall = getObjectField(step, "message");
+				if (toolCall) handleCompletedToolCall(toolCall);
 			};
 
 			// Handle abort signal
@@ -321,7 +366,7 @@ export function streamCursor(
 			throwIfAborted();
 			run = await agent.send(
 				{ text: prompt.text, images: prompt.images.length > 0 ? prompt.images : undefined },
-				{ onDelta },
+				{ onDelta, onStep },
 			);
 			if (options?.signal?.aborted) {
 				await run.cancel().catch(() => {});

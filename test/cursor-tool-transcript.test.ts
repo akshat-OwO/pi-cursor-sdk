@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { formatCursorToolTranscript, mergeCursorToolCalls } from "../src/cursor-tool-transcript.js";
+import { buildCursorPiToolDisplay, formatCursorToolTranscript, mergeCursorToolCalls } from "../src/cursor-tool-transcript.js";
 
 describe("formatCursorToolTranscript", () => {
 	it("formats Cursor read results as a pi-like read transcript", () => {
@@ -98,6 +98,32 @@ describe("formatCursorToolTranscript", () => {
 
 		expect(transcript).toContain("$ date\n\nSat May  9 10:48:38 MDT 2026");
 		expect(transcript).toContain("Took 0.0s");
+	});
+
+	it("builds native pi display data for Cursor read and shell calls", () => {
+		const readDisplay = buildCursorPiToolDisplay({
+			name: "read",
+			args: { path: "README.md" },
+			result: { status: "success", value: { content: "# Title" } },
+		});
+		const shellDisplay = buildCursorPiToolDisplay({
+			name: "run_terminal_cmd",
+			args: { command: "date" },
+			result: { status: "success", value: { stdout: "Sat May  9\n", stderr: "", exitCode: 0 } },
+		});
+
+		expect(readDisplay).toMatchObject({
+			toolName: "read",
+			args: { path: "README.md" },
+			result: { content: [{ type: "text", text: "# Title" }] },
+			isError: false,
+		});
+		expect(shellDisplay).toMatchObject({
+			toolName: "bash",
+			args: { command: "date" },
+			result: { content: [{ type: "text", text: "Sat May  9" }] },
+			isError: false,
+		});
 	});
 
 	it("keeps started tool args when the completed Cursor update only contains a result", () => {

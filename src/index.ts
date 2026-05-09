@@ -1,10 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { discoverModels, type CursorModelFallbackIssue } from "./model-discovery.js";
 import { registerCursorFastControls } from "./cursor-state.js";
+import { registerCursorNativeToolDisplay } from "./cursor-native-tool-display.js";
 import { streamCursor } from "./cursor-provider.js";
 
 export default async function (pi: ExtensionAPI) {
 	registerCursorFastControls(pi);
+	registerCursorNativeToolDisplay(pi);
 	let fallbackIssue: CursorModelFallbackIssue | undefined;
 	const models = await discoverModels({
 		onFallback: (issue) => {

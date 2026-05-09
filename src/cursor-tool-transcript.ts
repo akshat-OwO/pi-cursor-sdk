@@ -14,6 +14,18 @@ interface TranscriptOptions {
 	cwd?: string;
 }
 
+interface PiToolDisplayResult {
+	content: Array<{ type: "text"; text: string }>;
+	details?: unknown;
+}
+
+export interface CursorPiToolDisplay {
+	toolName: string;
+	args: Record<string, unknown>;
+	result: PiToolDisplayResult;
+	isError: boolean;
+}
+
 interface NormalizedResult {
 	status: string | undefined;
 	value: unknown;
@@ -208,6 +220,18 @@ function formatPathArg(args: Record<string, unknown>, options: TranscriptOptions
 	return typeof path === "string" && path.trim() ? formatDisplayPath(path, options.cwd) : undefined;
 }
 
+function getReadContent(args: Record<string, unknown>, result: NormalizedResult, options: TranscriptOptions): string {
+	const rawPath = typeof args.path === "string" ? args.path : undefined;
+	const readOptions = {
+		...options,
+		maxChars: options.maxChars ?? DEFAULT_READ_TRANSCRIPT_CHARS,
+		maxLines: options.maxLines ?? DEFAULT_READ_TRANSCRIPT_LINES,
+	};
+	const value = asRecord(result.value);
+	const resultContent = getString(value, "content");
+	return resultContent && resultContent.length > 0 ? resultContent : rawPath ? (readFilePreview(rawPath, readOptions) ?? stringifyUnknown(result.value)) : stringifyUnknown(result.value);
+}
+
 function formatRead(args: Record<string, unknown>, result: NormalizedResult, options: TranscriptOptions): string {
 	const rawPath = typeof args.path === "string" ? args.path : undefined;
 	const path = rawPath ? formatDisplayPath(rawPath, options.cwd) : "unknown";
@@ -220,9 +244,19 @@ function formatRead(args: Record<string, unknown>, result: NormalizedResult, opt
 		maxChars: options.maxChars ?? DEFAULT_READ_TRANSCRIPT_CHARS,
 		maxLines: options.maxLines ?? DEFAULT_READ_TRANSCRIPT_LINES,
 	};
-	const resultContent = getString(value, "content");
-	const content = resultContent && resultContent.length > 0 ? resultContent : rawPath ? readFilePreview(rawPath, readOptions) : undefined;
-	return joinSections(`read ${path}`, limitText(content ?? stringifyUnknown(result.value), readOptions, totalLines));
+	return joinSections(`read ${path}`, limitText(getReadContent(args, result, options), readOptions, totalLines));
+}
+
+function getShellOutput(result: NormalizedResult): { text: string; exitCode: number | undefined } {
+	const value = asRecord(result.value);
+	const stdout = getString(value, "stdout") ?? "";
+	const stderr = getString(value, "stderr") ?? "";
+	const exitCode = getNumber(value, "exitCode");
+	const outputParts: string[] = [];
+	if (stdout) outputParts.push(stdout.trimEnd());
+	if (stderr) outputParts.push(stderr.trimEnd());
+	if (exitCode !== undefined && exitCode !== 0) outputParts.push(`Command exited with code ${exitCode}`);
+	return { text: outputParts.filter(Boolean).join("\n\n") || "(no output)", exitCode };
 }
 
 function formatShell(args: Record<string, unknown>, result: NormalizedResult, options: TranscriptOptions): string {
@@ -230,14 +264,8 @@ function formatShell(args: Record<string, unknown>, result: NormalizedResult, op
 	if (result.status === "error") return joinSections(`$ ${command || "shell"}`, formatError(result.error));
 
 	const value = asRecord(result.value);
-	const stdout = getString(value, "stdout") ?? "";
-	const stderr = getString(value, "stderr") ?? "";
-	const exitCode = getNumber(value, "exitCode");
 	const executionTime = getNumber(value, "executionTime");
-	const outputParts: string[] = [];
-	if (stdout) outputParts.push(stdout.trimEnd());
-	if (stderr) outputParts.push(stderr.trimEnd());
-	if (exitCode !== undefined && exitCode !== 0) outputParts.push(`Command exited with code ${exitCode}`);
+	const outputParts = [getShellOutput(result).text];
 	if (executionTime !== undefined) outputParts.push(`Took ${(executionTime / 1000).toFixed(1)}s`);
 	return joinSections(`$ ${command || "shell"}`, limitText(outputParts.filter(Boolean).join("\n\n"), options));
 }
@@ -447,6 +475,65 @@ export function formatCursorToolTranscript(toolCall: unknown, options: Transcrip
 		default:
 			return formatFallback(name, args, result, options);
 	}
+}
+
+function textToolResult(text: string, details?: unknown): PiToolDisplayResult {
+	return { content: [{ type: "text", text }], details };
+}
+
+function buildGenericPiToolDisplay(name: string, args: Record<string, unknown>, result: NormalizedResult, options: TranscriptOptions): CursorPiToolDisplay {
+	const isError = result.status === "error";
+	return {
+		toolName: name,
+		args,
+		result: textToolResult(isError ? formatError(result.error) : limitText(stringifyUnknown(result.value), options)),
+		isError,
+	};
+}
+
+export function buildCursorPiToolDisplay(toolCall: unknown, options: TranscriptOptions = {}): CursorPiToolDisplay {
+	const name = normalizeToolName(getToolName(toolCall));
+	const args = getToolArgs(toolCall);
+	const result = normalizeResult(getToolResult(toolCall));
+
+	if (name === "read") {
+		const isError = result.status === "error";
+		const value = asRecord(result.value);
+		const totalLines = getNumber(value, "totalLines");
+		const readOptions = {
+			...options,
+			maxChars: options.maxChars ?? DEFAULT_READ_TRANSCRIPT_CHARS,
+			maxLines: options.maxLines ?? DEFAULT_READ_TRANSCRIPT_LINES,
+		};
+		return {
+			toolName: "read",
+			args,
+			result: textToolResult(isError ? formatError(result.error) : limitText(getReadContent(args, result, options), readOptions, totalLines)),
+			isError,
+		};
+	}
+
+	if (name === "shell") {
+		const shellOutput = getShellOutput(result);
+		const isError = result.status === "error" || (shellOutput.exitCode !== undefined && shellOutput.exitCode !== 0);
+		return {
+			toolName: "bash",
+			args,
+			result: textToolResult(result.status === "error" ? formatError(result.error) : limitText(shellOutput.text, options)),
+			isError,
+		};
+	}
+
+	if (name === "ls") {
+		return {
+			toolName: "ls",
+			args,
+			result: textToolResult(result.status === "error" ? formatError(result.error) : formatLs(args, result, options).split("\n\n").slice(1).join("\n\n").trim()),
+			isError: result.status === "error",
+		};
+	}
+
+	return buildGenericPiToolDisplay(name, args, result, options);
 }
 
 export function mergeCursorToolCalls(startedToolCall: unknown, completedToolCall: unknown): unknown {

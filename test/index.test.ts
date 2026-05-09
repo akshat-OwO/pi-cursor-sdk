@@ -11,6 +11,7 @@ vi.mock("../src/cursor-provider.js", () => ({
 import extensionFactory from "../src/index.js";
 import { discoverModels } from "../src/model-discovery.js";
 import { streamCursor } from "../src/cursor-provider.js";
+import { recordCursorNativeToolDisplay } from "../src/cursor-native-tool-display.js";
 
 const mockedDiscover = vi.mocked(discoverModels);
 const mockedStreamCursor = vi.mocked(streamCursor);
@@ -24,6 +25,8 @@ function createMockPi() {
 		}),
 		registerFlag: vi.fn(),
 		registerCommand: vi.fn(),
+		registerMessageRenderer: vi.fn(),
+		sendMessage: vi.fn(),
 		on: vi.fn((event: string, handler: (event: unknown, ctx: any) => Promise<void> | void) => {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 		}),
@@ -68,6 +71,7 @@ describe("extension factory", () => {
 			"cursor-fast",
 			expect.objectContaining({ description: expect.stringContaining("Toggle Cursor fast") }),
 		);
+		expect(pi.registerMessageRenderer).toHaveBeenCalledWith("cursor-native-tool-display", expect.any(Function));
 		expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
 		expect(pi.on).toHaveBeenCalledWith("model_select", expect.any(Function));
 		expect(mockedDiscover).toHaveBeenCalledOnce();
@@ -165,5 +169,36 @@ describe("extension factory", () => {
 		await sessionHandlers.at(-1)!({}, ctx);
 
 		expect(notify).not.toHaveBeenCalled();
+	});
+
+	it("emits recorded Cursor tool displays as custom native-tool messages at agent end", async () => {
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		await extensionFactory(pi as any);
+
+		recordCursorNativeToolDisplay({
+			id: "cursor-tool-1",
+			toolName: "read",
+			args: { path: "README.md" },
+			result: { content: [{ type: "text", text: "# pi-cursor-sdk" }] },
+			isError: false,
+		});
+
+		const agentEndHandlers = pi._handlers.get("agent_end") ?? [];
+		await agentEndHandlers.at(-1)!({}, {});
+
+		expect(pi.sendMessage).toHaveBeenCalledWith({
+			customType: "cursor-native-tool-display",
+			content: "",
+			display: true,
+			details: expect.objectContaining({
+				tools: [
+					expect.objectContaining({
+						toolName: "read",
+						args: { path: "README.md" },
+					}),
+				],
+			}),
+		});
 	});
 });
