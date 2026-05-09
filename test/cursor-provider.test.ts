@@ -533,6 +533,112 @@ describe("streamCursor", () => {
 		expect(finalDone.message.content.map((block: any) => block.type)).toEqual(["thinking", "text"]);
 	});
 
+	it("does not duplicate final result after an earlier post-tool text turn", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		const registeredTools: any[] = [];
+		registerCursorNativeToolDisplay({
+			registerTool: vi.fn((tool: any) => {
+				registeredTools.push(tool);
+			}),
+		} as any);
+
+		let onDelta: ((args: { update: any }) => void) | undefined;
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
+			onDelta = opts.onDelta as (args: { update: any }) => void;
+			onDelta({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "README.md" } }, callId: "c1" } });
+			onDelta({
+				update: {
+					type: "tool-call-completed",
+					toolCall: {
+						name: "read",
+						result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+					},
+					callId: "c1",
+				},
+			});
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "running",
+				wait: runWait,
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			agentId: "agent-1",
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+		const readTool = registeredTools.find((tool) => tool.name === "read");
+
+		const context = makeContext();
+		const firstEvents = await collectEvents(streamCursor(makeModel(), context, { apiKey: "test-key" }));
+		const firstDone = firstEvents.find((e: any) => e.type === "done") as any;
+		const firstToolCall = firstDone.message.content.find((block: any) => block.type === "toolCall");
+		const firstToolResult = await readTool.execute(firstToolCall.id, firstToolCall.arguments, undefined, undefined, {});
+		context.messages.push(firstDone.message, {
+			role: "toolResult",
+			toolCallId: firstToolCall.id,
+			toolName: "read",
+			content: firstToolResult.content,
+			details: firstToolResult.details,
+			isError: false,
+			timestamp: 2,
+		});
+
+		const secondStream = streamCursor(makeModel(), context, { apiKey: "test-key" });
+		const secondDonePromise = collectEvents(secondStream);
+		await Promise.resolve();
+		onDelta?.({ update: { type: "text-delta", text: "I am checking helpers." } });
+		onDelta?.({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "src/index.ts" } }, callId: "c2" } });
+		onDelta?.({
+			update: {
+				type: "tool-call-completed",
+				toolCall: {
+					name: "read",
+					result: { status: "success", value: { content: "import type { ExtensionAPI } from \"@earendil-works/pi-coding-agent\";" } },
+				},
+				callId: "c2",
+			},
+		});
+		const secondEvents = await secondDonePromise;
+		const secondDone = secondEvents.find((e: any) => e.type === "done") as any;
+		const secondToolCall = secondDone.message.content.find((block: any) => block.type === "toolCall");
+		const secondToolResult = await readTool.execute(secondToolCall.id, secondToolCall.arguments, undefined, undefined, {});
+		context.messages.push(secondDone.message, {
+			role: "toolResult",
+			toolCallId: secondToolCall.id,
+			toolName: "read",
+			content: secondToolResult.content,
+			details: secondToolResult.details,
+			isError: false,
+			timestamp: 3,
+		});
+
+		const finalStream = streamCursor(makeModel(), context, { apiKey: "test-key" });
+		const finalEventsPromise = collectEvents(finalStream);
+		await Promise.resolve();
+		onDelta?.({ update: { type: "text-delta", text: "Final answer." } });
+		resolveRun({ id: "run-1", status: "finished", result: "Final answer." });
+		const finalEvents = await finalEventsPromise;
+		const finalDone = finalEvents.find((e: any) => e.type === "done") as any;
+		const finalText = finalEvents.filter((e: any) => e.type === "text_delta").map((e: any) => e.delta).join("");
+
+		expect(runWait).toHaveBeenCalledTimes(1);
+		expect(secondDone.message.content.map((block: any) => block.type)).toEqual(["text", "toolCall"]);
+		expect(finalText).toBe("Final answer.");
+		expect(finalDone.message.content).toEqual([{ type: "text", text: "Final answer." }]);
+	});
+
 	it("streams Cursor text deltas live and only falls back to final result when no deltas arrive", async () => {
 		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
 			opts.onDelta({ update: { type: "text-delta", text: "Final " } });

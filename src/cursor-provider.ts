@@ -73,7 +73,6 @@ interface CursorNativeLiveRun {
 	pendingEvents: CursorNativeQueuedEvent[];
 	textDeltas: string[];
 	finalText?: string;
-	streamedText: string;
 	done: boolean;
 	cancelled: boolean;
 	errorMessage?: string;
@@ -340,7 +339,7 @@ function emitCursorNativeThinkingDelta(turn: CursorNativeTurnState, delta: strin
 	turn.stream.push({ type: "thinking_delta", contentIndex: turn.thinkingContentIndex, delta, partial: turn.partial });
 }
 
-function emitCursorNativeTextDelta(turn: CursorNativeTurnState, run: CursorNativeLiveRun, delta: string): void {
+function emitCursorNativeTextDelta(turn: CursorNativeTurnState, delta: string): void {
 	closeCursorNativeThinkingBlock(turn);
 	if (turn.textContentIndex < 0) {
 		turn.textContentIndex = turn.partial.content.length;
@@ -350,13 +349,11 @@ function emitCursorNativeTextDelta(turn: CursorNativeTurnState, run: CursorNativ
 	const block = turn.partial.content[turn.textContentIndex];
 	if (block.type !== "text") return;
 	block.text += delta;
-	run.streamedText += delta;
 	turn.stream.push({ type: "text_delta", contentIndex: turn.textContentIndex, delta, partial: turn.partial });
 }
 
 function emitCursorNativeQueuedEvent(
 	turn: CursorNativeTurnState,
-	run: CursorNativeLiveRun,
 	event: Exclude<CursorNativeQueuedEvent, { type: "tool" }>,
 ): void {
 	if (event.type === "thinking-delta") {
@@ -364,7 +361,7 @@ function emitCursorNativeQueuedEvent(
 	} else if (event.type === "thinking-completed") {
 		closeCursorNativeThinkingBlock(turn);
 	} else if (event.type === "text-delta") {
-		emitCursorNativeTextDelta(turn, run, event.text);
+		emitCursorNativeTextDelta(turn, event.text);
 	}
 }
 
@@ -437,7 +434,7 @@ async function emitCursorNativeRunNextTurn(
 				return;
 			}
 			run.pendingEvents.shift();
-			emitCursorNativeQueuedEvent(turn, run, event);
+			emitCursorNativeQueuedEvent(turn, event);
 		}
 
 		if (run.cancelled) {
@@ -455,17 +452,9 @@ async function emitCursorNativeRunNextTurn(
 		}
 		if (run.done) {
 			let outputText = closeCursorNativeTurnBlocks(turn);
-			const finalText = run.finalText ?? run.textDeltas.join("");
-			const replayTextSource = run.streamedText
-				? finalText.startsWith(run.streamedText)
-					? finalText.slice(run.streamedText.length)
-					: finalText === run.streamedText
-						? ""
-						: finalText
-				: finalText;
-			const replayText = await emitTextDeltas(stream, partial, splitTextIntoReplayDeltas(replayTextSource));
-			run.streamedText += replayText;
-			outputText += replayText;
+			if (!outputText) {
+				outputText += await emitTextDeltas(stream, partial, splitTextIntoReplayDeltas(run.finalText ?? run.textDeltas.join("")));
+			}
 			setApproximateUsage(partial, run.promptInputTokens, outputText);
 			partial.stopReason = "stop";
 			stream.push({ type: "done", reason: "stop", message: partial });
@@ -553,7 +542,6 @@ export function streamCursor(
 						promptInputTokens,
 						pendingEvents: [],
 						textDeltas,
-						streamedText: "",
 						done: false,
 						cancelled: false,
 						waiters: new Set(),
