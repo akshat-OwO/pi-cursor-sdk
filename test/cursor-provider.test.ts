@@ -345,6 +345,13 @@ describe("streamCursor", () => {
 			}),
 		} as any);
 
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
 		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
 			opts.onDelta({ update: { type: "text-delta", text: "I am checking files." } });
 			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "README.md" } }, callId: "c1" } });
@@ -362,8 +369,8 @@ describe("streamCursor", () => {
 			return {
 				id: "run-1",
 				agentId: "agent-1",
-				status: "finished",
-				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: "Final answer only." }),
+				status: "running",
+				wait: runWait,
 				cancel: vi.fn(),
 				supports: () => true,
 				unsupportedReason: () => undefined,
@@ -376,6 +383,7 @@ describe("streamCursor", () => {
 		});
 
 		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		expect(runWait).toHaveBeenCalledTimes(1);
 		const firstDone = firstEvents.find((e: any) => e.type === "done") as any;
 		const firstText = firstEvents.filter((e: any) => e.type === "text_delta").map((e: any) => e.delta).join("");
 		const toolCall = firstDone.message.content.find((block: any) => block.type === "toolCall");
@@ -394,6 +402,8 @@ describe("streamCursor", () => {
 			details: undefined,
 			terminate: false,
 		});
+
+		resolveRun({ id: "run-1", status: "finished", result: "Final answer only." });
 
 		const replayContext = makeContext();
 		replayContext.messages = [
