@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.6 - 2026-05-10
+
 ### Fixed
 
 - Avoid loading failures when another extension already owns `read`, `bash`, or `ls`; Cursor native replay now registers only non-conflicting wrappers and falls back to scrubbed activity transcripts for skipped tools.
