@@ -185,6 +185,11 @@ function estimatePromptInputTokens(prompt: CursorPrompt): number {
 	return estimateTextTokens(prompt.text) + prompt.images.length * IMAGE_TOKEN_ESTIMATE;
 }
 
+function getPromptInputTokenBudget(model: Model<Api>): number {
+	const outputReserveTokens = Math.min(model.maxTokens, Math.max(1, Math.floor(model.contextWindow * 0.2)));
+	return Math.max(1, model.contextWindow - outputReserveTokens);
+}
+
 function setApproximateUsage(partial: AssistantMessage, promptInputTokens: number, outputText: string): void {
 	partial.usage.input = promptInputTokens;
 	partial.usage.output = estimateTextTokens(outputText);
@@ -582,7 +587,11 @@ export function streamCursor(
 			});
 			throwIfAborted();
 
-			const prompt = buildCursorPrompt(context);
+			const prompt = buildCursorPrompt(context, {
+				maxInputTokens: getPromptInputTokenBudget(model),
+				charsPerToken: APPROX_CHARS_PER_TOKEN,
+				imageTokenEstimate: IMAGE_TOKEN_ESTIMATE,
+			});
 			const promptInputTokens = estimatePromptInputTokens(prompt);
 			let thinkingContentIndex = -1;
 			let activityTraceChars = 0;

@@ -182,6 +182,84 @@ describe("buildCursorPrompt", () => {
 		expect(result.images).toHaveLength(0);
 	});
 
+	it("budgets transcript history while preserving system prompt and latest user request", () => {
+		const ctx: Context = {
+			systemPrompt: "Always preserve this system instruction.",
+			messages: [
+				{ role: "user", content: `old request ${"x".repeat(200)}`, timestamp: 1 } satisfies UserMessage,
+				{
+					role: "assistant",
+					content: [{ type: "text", text: `old answer ${"y".repeat(200)}` }],
+					api: "cursor-sdk",
+					provider: "cursor",
+					model: "test",
+					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					stopReason: "stop",
+					timestamp: 2,
+				} satisfies AssistantMessage,
+				{ role: "user", content: "latest request must stay", timestamp: 3 } satisfies UserMessage,
+			],
+		};
+
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 120, charsPerToken: 1 });
+
+		expect(result.text).toContain("Always preserve this system instruction.");
+		expect(result.text).toContain("User: latest request must stay");
+		expect(result.text).toContain("Answer the latest user request");
+		expect(result.text).toContain("[Earlier transcript omitted: 2 messages to fit Cursor context budget]");
+		expect(result.text).not.toContain("old request");
+		expect(result.text).not.toContain("old answer");
+	});
+
+	it("keeps recent transcript messages that fit the budget", () => {
+		const ctx: Context = {
+			messages: [
+				{ role: "user", content: `old request ${"x".repeat(1200)}`, timestamp: 1 } satisfies UserMessage,
+				{ role: "user", content: "recent request", timestamp: 2 } satisfies UserMessage,
+				{
+					role: "toolResult",
+					toolCallId: "tc1",
+					toolName: "bash",
+					content: [{ type: "text", text: "recent tool output" }],
+					isError: false,
+					timestamp: 3,
+				} satisfies ToolResultMessage,
+				{ role: "user", content: "latest request", timestamp: 4 } satisfies UserMessage,
+			],
+		};
+
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 1000, charsPerToken: 1 });
+
+		expect(result.text).toContain("User: latest request");
+		expect(result.text).toContain("User: recent request");
+		expect(result.text).toContain("Tool result (bash, call tc1): recent tool output");
+		expect(result.text).not.toContain("old request");
+	});
+
+	it("omits oversized old tool results before older text that still fits", () => {
+		const ctx: Context = {
+			messages: [
+				{
+					role: "toolResult",
+					toolCallId: "tc1",
+					toolName: "bash",
+					content: [{ type: "text", text: `large output ${"z".repeat(1200)}` }],
+					isError: false,
+					timestamp: 1,
+				} satisfies ToolResultMessage,
+				{ role: "user", content: "recent request", timestamp: 2 } satisfies UserMessage,
+				{ role: "user", content: "latest request", timestamp: 3 } satisfies UserMessage,
+			],
+		};
+
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 1000, charsPerToken: 1 });
+
+		expect(result.text).toContain("User: latest request");
+		expect(result.text).toContain("User: recent request");
+		expect(result.text).toContain("[Earlier transcript omitted: 1 message to fit Cursor context budget]");
+		expect(result.text).not.toContain("large output");
+	});
+
 	it("appends answer instruction", () => {
 		const ctx: Context = {
 			messages: [{ role: "user", content: "test", timestamp: 1 }],

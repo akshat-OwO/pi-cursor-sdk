@@ -2,42 +2,6 @@
   "version": 1,
   "tasks": [
     {
-      "id": "RQ-0002",
-      "status": "todo",
-      "title": "Add prompt/context budgeting before Cursor Agent.send",
-      "priority": "high",
-      "tags": [
-        "context",
-        "cursor-sdk",
-        "performance"
-      ],
-      "scope": [
-        "src/context.ts",
-        "src/cursor-provider.ts",
-        "test/context.test.ts",
-        "test/cursor-provider.test.ts"
-      ],
-      "evidence": [
-        "src/context.ts:70-100 serializes every pi message/tool result into one Cursor prompt.",
-        "src/cursor-provider.ts:585-586 estimates prompt tokens after building the full prompt but does not trim against model.contextWindow.",
-        "Long sessions or large tool outputs can exceed Cursor context despite accurate model metadata."
-      ],
-      "plan": [
-        "Design a budgeted transcript builder that preserves system instructions and the latest user request.",
-        "Trim or summarize oldest turns and large tool outputs with an output-token reserve.",
-        "Add tests for oversized histories and oversized tool results.",
-        "Run npm test and npm run typecheck."
-      ],
-      "notes": [],
-      "request": "From 2026-05-15 extension improvement audit requested by user.",
-      "created_at": "2026-05-15T15:45:25.103158000Z",
-      "updated_at": "2026-05-15T15:45:25.103158000Z",
-      "depends_on": [],
-      "blocks": [],
-      "relates_to": [],
-      "custom_fields": {}
-    },
-    {
       "id": "RQ-0003",
       "status": "todo",
       "title": "Preserve assistant text emitted before native Cursor tool replay",

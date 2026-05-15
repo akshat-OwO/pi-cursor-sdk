@@ -1436,6 +1436,79 @@ describe("streamCursor", () => {
 		expect(mockCancel).toHaveBeenCalled();
 	});
 
+	it("budgets oversized prompt history before Cursor Agent.send", async () => {
+		const mockSend = vi.fn().mockResolvedValue({
+			id: "run-1",
+			agentId: "agent-1",
+			status: "finished",
+			wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+			cancel: vi.fn(),
+			supports: () => true,
+			unsupportedReason: () => undefined,
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+		const context: Context = {
+			systemPrompt: "Keep this system prompt.",
+			messages: [
+				{ role: "user", content: `old request ${"x".repeat(1200)}`, timestamp: 1 },
+				{ role: "user", content: "latest request must remain", timestamp: 2 },
+			],
+		};
+		const smallModel = { ...makeModel("gpt-5.5@1m"), contextWindow: 250, maxTokens: 50 };
+
+		const stream = streamCursor(smallModel, context, { apiKey: "test-key" });
+		await collectEvents(stream);
+
+		const sentMessage = mockSend.mock.calls[0]?.[0] as { text: string };
+		expect(sentMessage.text).toContain("Keep this system prompt.");
+		expect(sentMessage.text).toContain("latest request must remain");
+		expect(sentMessage.text).toContain("Earlier transcript omitted");
+		expect(sentMessage.text).not.toContain("old request");
+	});
+
+	it("reserves image tokens when budgeting oversized prompt history", async () => {
+		const mockSend = vi.fn().mockResolvedValue({
+			id: "run-1",
+			agentId: "agent-1",
+			status: "finished",
+			wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+			cancel: vi.fn(),
+			supports: () => true,
+			unsupportedReason: () => undefined,
+		});
+		mockedCreate.mockResolvedValue({
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+		const context: Context = {
+			systemPrompt: "Keep image prompt compact.",
+			messages: [
+				{ role: "user", content: `old request ${"x".repeat(1200)}`, timestamp: 1 },
+				{
+					role: "user",
+					content: [
+						{ type: "text", text: "latest image request" },
+						{ type: "image", data: "base64-image", mimeType: "image/png" },
+					],
+					timestamp: 2,
+				},
+			],
+		};
+		const smallModel = { ...makeModel("gpt-5.5@1m"), contextWindow: 250, maxTokens: 50 };
+
+		const stream = streamCursor(smallModel, context, { apiKey: "test-key" });
+		await collectEvents(stream);
+
+		const sentMessage = mockSend.mock.calls[0]?.[0] as { text: string; images?: unknown[] };
+		expect(sentMessage.text).toContain("latest image request");
+		expect(sentMessage.text).toContain("Earlier transcript omitted");
+		expect(sentMessage.text).not.toContain("old request");
+		expect(sentMessage.images).toEqual([{ data: "base64-image", mimeType: "image/png" }]);
+	});
+
 	it("forwards latest user images to Cursor Agent.send", async () => {
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",

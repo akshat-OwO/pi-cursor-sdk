@@ -6,6 +6,15 @@ export interface CursorPrompt {
 	images: SDKImage[];
 }
 
+export interface CursorPromptOptions {
+	maxInputTokens?: number;
+	charsPerToken?: number;
+	imageTokenEstimate?: number;
+}
+
+const DEFAULT_CHARS_PER_TOKEN = 4;
+const SECTION_SEPARATOR = "\n\n";
+
 function isTextBlock(block: { type: string }): block is { type: "text"; text: string } {
 	return block.type === "text";
 }
@@ -53,8 +62,94 @@ function formatToolCall(toolCall: ToolCall): string {
 	return `Tool call (${toolCall.name}, call ${toolCall.id}): ${args}`;
 }
 
-export function buildCursorPrompt(context: Context): CursorPrompt {
-	const parts: string[] = [
+function formatMessage(msg: Message): string | undefined {
+	switch (msg.role) {
+		case "user": {
+			const text = formatContentBlocks(msg.content);
+			return text ? `User: ${text}` : undefined;
+		}
+		case "assistant": {
+			const blocks = Array.isArray(msg.content) ? msg.content : [{ type: "text" as const, text: String(msg.content) }];
+			const textParts: string[] = [];
+			for (const block of blocks) {
+				if (isTextBlock(block)) {
+					textParts.push(block.text);
+				} else if (isToolCallBlock(block)) {
+					textParts.push(formatToolCall(block));
+				}
+				// Omit thinking content from transcript
+			}
+			return textParts.length > 0 ? `Assistant: ${textParts.join("\n")}` : undefined;
+		}
+		case "toolResult": {
+			const text = formatContentBlocks(msg.content);
+			const label = msg.isError ? "Tool error" : "Tool result";
+			return `${label} (${msg.toolName}, call ${msg.toolCallId}): ${text}`;
+		}
+	}
+}
+
+function getLatestUserMessageIndex(messages: Message[]): number {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		if (messages[index].role === "user") return index;
+	}
+	return -1;
+}
+
+function getSectionCost(section: string): number {
+	return section.length + SECTION_SEPARATOR.length;
+}
+
+function applyPromptBudget(
+	sectionsBeforeMessages: string[],
+	messageSections: Array<{ index: number; text: string }>,
+	sectionsAfterMessages: string[],
+	latestUserMessageIndex: number,
+	options: CursorPromptOptions,
+): string[] {
+	const maxInputTokens = options.maxInputTokens;
+	if (maxInputTokens === undefined || !Number.isFinite(maxInputTokens) || maxInputTokens <= 0) {
+		return [...sectionsBeforeMessages, ...messageSections.map((section) => section.text), ...sectionsAfterMessages];
+	}
+
+	const charsPerToken = options.charsPerToken ?? DEFAULT_CHARS_PER_TOKEN;
+	const maxChars = Math.max(1, Math.floor(maxInputTokens * charsPerToken));
+	const requiredMessageSections = messageSections.filter((section) => section.index === latestUserMessageIndex);
+	const requiredCost = [...sectionsBeforeMessages, ...requiredMessageSections.map((section) => section.text), ...sectionsAfterMessages].reduce(
+		(total, section) => total + getSectionCost(section),
+		0,
+	);
+	let remainingChars = maxChars - requiredCost;
+	const includedMessageIndexes = new Set(requiredMessageSections.map((section) => section.index));
+	let omittedMessageCount = 0;
+
+	for (let index = messageSections.length - 1; index >= 0; index -= 1) {
+		const section = messageSections[index];
+		if (includedMessageIndexes.has(section.index)) continue;
+		const cost = getSectionCost(section.text);
+		if (cost <= remainingChars) {
+			includedMessageIndexes.add(section.index);
+			remainingChars -= cost;
+			continue;
+		}
+		omittedMessageCount += messageSections
+			.slice(0, index + 1)
+			.filter((candidate) => !includedMessageIndexes.has(candidate.index)).length;
+		break;
+	}
+
+	const budgetNotice =
+		omittedMessageCount > 0
+			? [`[Earlier transcript omitted: ${omittedMessageCount} message${omittedMessageCount === 1 ? "" : "s"} to fit Cursor context budget]`]
+			: [];
+	const includedMessages = messageSections
+		.filter((section) => includedMessageIndexes.has(section.index))
+		.map((section) => section.text);
+	return [...sectionsBeforeMessages, ...budgetNotice, ...includedMessages, ...sectionsAfterMessages];
+}
+
+export function buildCursorPrompt(context: Context, options: CursorPromptOptions = {}): CursorPrompt {
+	const sectionsBeforeMessages: string[] = [
 		[
 			"Cursor SDK tool boundary:",
 			"Only tools exposed by the Cursor SDK in this run are callable. The pi system prompt and transcript are context only; they do not grant access to pi tools or tool names mentioned there.",
@@ -64,49 +159,34 @@ export function buildCursorPrompt(context: Context): CursorPrompt {
 	];
 
 	if (context.systemPrompt) {
-		parts.push(`System instructions from pi:\n${context.systemPrompt}`);
+		sectionsBeforeMessages.push(`System instructions from pi:\n${context.systemPrompt}`);
 	}
 
-	for (const msg of context.messages) {
-		switch (msg.role) {
-			case "user": {
-				const text = formatContentBlocks(msg.content);
-				if (text) parts.push(`User: ${text}`);
-				break;
-			}
-			case "assistant": {
-				const blocks = Array.isArray(msg.content) ? msg.content : [{ type: "text" as const, text: String(msg.content) }];
-				const textParts: string[] = [];
-				for (const block of blocks) {
-					if (isTextBlock(block)) {
-						textParts.push(block.text);
-					} else if (isToolCallBlock(block)) {
-						textParts.push(formatToolCall(block));
-					}
-					// Omit thinking content from transcript
-				}
-				if (textParts.length > 0) {
-					parts.push(`Assistant: ${textParts.join("\n")}`);
-				}
-				break;
-			}
-			case "toolResult": {
-				const text = formatContentBlocks(msg.content);
-				const label = msg.isError ? "Tool error" : "Tool result";
-				parts.push(`${label} (${msg.toolName}, call ${msg.toolCallId}): ${text}`);
-				break;
-			}
-		}
-	}
-
-	parts.push(
+	const messageSections = context.messages
+		.map((msg, index) => {
+			const text = formatMessage(msg);
+			return text ? { index, text } : undefined;
+		})
+		.filter((section): section is { index: number; text: string } => section !== undefined);
+	const sectionsAfterMessages = [
 		[
 			"Answer the latest user request above using your capabilities. Do not assume access to pi tools.",
 			"If the user asks for web research, do not claim to have searched the web unless a Cursor SDK web/search/browser/MCP tool was actually used.",
 		].join("\n"),
+	];
+	const images = extractLatestImages(context.messages);
+	const imageTokenReserve = images.length * (options.imageTokenEstimate ?? 0);
+	const budgetOptions =
+		options.maxInputTokens === undefined
+			? options
+			: { ...options, maxInputTokens: Math.max(1, options.maxInputTokens - imageTokenReserve) };
+	const parts = applyPromptBudget(
+		sectionsBeforeMessages,
+		messageSections,
+		sectionsAfterMessages,
+		getLatestUserMessageIndex(context.messages),
+		budgetOptions,
 	);
 
-	const images = extractLatestImages(context.messages);
-
-	return { text: parts.join("\n\n"), images };
+	return { text: parts.join(SECTION_SEPARATOR), images };
 }
