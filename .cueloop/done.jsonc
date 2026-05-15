@@ -161,6 +161,47 @@
       "blocks": [],
       "relates_to": [],
       "custom_fields": {}
+    },
+    {
+      "id": "RQ-0005",
+      "status": "done",
+      "title": "Improve or explicitly constrain image follow-up behavior",
+      "priority": "medium",
+      "tags": [
+        "images",
+        "multimodal",
+        "ux"
+      ],
+      "scope": [
+        "src/context.ts",
+        "test/context.test.ts",
+        "README.md",
+        "docs/cursor-model-ux-spec.md"
+      ],
+      "evidence": [
+        "src/context.ts:21-37 forwards images only from the latest user message.",
+        "src/context.ts:39-48 replaces historical images with [image omitted from transcript].",
+        "docs/cursor-model-ux-spec.md:15-16 records this as a pending product decision."
+      ],
+      "plan": [
+        "Choose a policy: keep current behavior with explicit prompt limitation, or add opt-in recent-image carry-forward with token/privacy budget.",
+        "Implement the chosen behavior and update tests.",
+        "Update README/spec so users understand multimodal follow-up semantics.",
+        "Run npm test and npm run typecheck."
+      ],
+      "notes": [
+        "Started by agent to clarify image follow-up behavior.",
+        "Chose explicit-constraining policy for multimodal follow-ups. Added prompt boundary that only latest-user images are available as bytes and Cursor should ask for reattachment/description for prior images. Updated context tests, README, and UX spec. Validated with npm test -- test/context.test.ts, npm test, npm run typecheck. Reviewer subagent reported no material findings."
+      ],
+      "request": "From 2026-05-15 extension improvement audit requested by user.",
+      "created_at": "2026-05-15T15:45:25.103158000Z",
+      "updated_at": "2026-05-15T16:13:29.234095000Z",
+      "completed_at": "2026-05-15T16:13:29.234095000Z",
+      "started_at": "2026-05-15T16:11:20.530130000Z",
+      "depends_on": [],
+      "blocks": [],
+      "relates_to": [],
+      "custom_fields": {}
     }
   ]
 }

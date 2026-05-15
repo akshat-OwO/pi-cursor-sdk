@@ -2,42 +2,6 @@
   "version": 1,
   "tasks": [
     {
-      "id": "RQ-0005",
-      "status": "todo",
-      "title": "Improve or explicitly constrain image follow-up behavior",
-      "priority": "medium",
-      "tags": [
-        "images",
-        "multimodal",
-        "ux"
-      ],
-      "scope": [
-        "src/context.ts",
-        "test/context.test.ts",
-        "README.md",
-        "docs/cursor-model-ux-spec.md"
-      ],
-      "evidence": [
-        "src/context.ts:21-37 forwards images only from the latest user message.",
-        "src/context.ts:39-48 replaces historical images with [image omitted from transcript].",
-        "docs/cursor-model-ux-spec.md:15-16 records this as a pending product decision."
-      ],
-      "plan": [
-        "Choose a policy: keep current behavior with explicit prompt limitation, or add opt-in recent-image carry-forward with token/privacy budget.",
-        "Implement the chosen behavior and update tests.",
-        "Update README/spec so users understand multimodal follow-up semantics.",
-        "Run npm test and npm run typecheck."
-      ],
-      "notes": [],
-      "request": "From 2026-05-15 extension improvement audit requested by user.",
-      "created_at": "2026-05-15T15:45:25.103158000Z",
-      "updated_at": "2026-05-15T15:45:25.103158000Z",
-      "depends_on": [],
-      "blocks": [],
-      "relates_to": [],
-      "custom_fields": {}
-    },
-    {
       "id": "RQ-0006",
       "status": "todo",
       "title": "Use pi session cwd instead of process.cwd where available",

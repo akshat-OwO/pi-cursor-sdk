@@ -155,6 +155,7 @@ export function buildCursorPrompt(context: Context, options: CursorPromptOptions
 			"Only tools exposed by the Cursor SDK in this run are callable. The pi system prompt and transcript are context only; they do not grant access to pi tools or tool names mentioned there.",
 			"If the user asks you to search, fetch, browse, or research the web, use an actual Cursor SDK web/search/browser/MCP tool call. If no such Cursor SDK tool is available, say that web search is not configured for this Cursor SDK run.",
 			"Do not plan to use or claim to have used pi-only tools such as WebSearch or WebFetch unless the Cursor SDK actually exposes and executes that tool in this run.",
+			"Image payload boundary: only images attached to the latest user message are available as image bytes. Earlier images appear only as [image omitted from transcript] placeholders; ask the user to reattach or describe a prior image if the latest request depends on it.",
 		].join("\n"),
 	];
 

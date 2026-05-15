@@ -195,7 +195,7 @@ If you do not see `cursor fast`, fast mode is off.
 
 ## Images
 
-Images from the latest user message are forwarded to Cursor. Historical images are kept out of the transcript. The extension advertises `text` and `image` input for Cursor models because Cursor's SDK accepts image messages and Cursor models are expected to support them.
+Images from the latest user message are forwarded to Cursor. Historical images are kept out of the transcript and appear only as `[image omitted from transcript]` placeholders, so follow-up questions about an earlier image should reattach the image or include a textual description. The extension advertises `text` and `image` input for Cursor models because Cursor's SDK accepts image messages and Cursor models are expected to support them.
 
 ## Fallback models
 

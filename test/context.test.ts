@@ -159,6 +159,12 @@ describe("buildCursorPrompt", () => {
 		expect(result.images[0]).toEqual({ data: "newbase64", mimeType: "image/jpeg" });
 	});
 
+	it("explains that only latest user images are available as image bytes", () => {
+		const result = buildCursorPrompt({ messages: [{ role: "user", content: "test", timestamp: 1 }] });
+		expect(result.text).toContain("only images attached to the latest user message are available as image bytes");
+		expect(result.text).toContain("ask the user to reattach or describe a prior image");
+	});
+
 	it("replaces historical images with placeholder text", () => {
 		const ctx: Context = {
 			messages: [
@@ -214,7 +220,7 @@ describe("buildCursorPrompt", () => {
 	it("keeps recent transcript messages that fit the budget", () => {
 		const ctx: Context = {
 			messages: [
-				{ role: "user", content: `old request ${"x".repeat(1200)}`, timestamp: 1 } satisfies UserMessage,
+				{ role: "user", content: `old request ${"x".repeat(3000)}`, timestamp: 1 } satisfies UserMessage,
 				{ role: "user", content: "recent request", timestamp: 2 } satisfies UserMessage,
 				{
 					role: "toolResult",
@@ -228,7 +234,7 @@ describe("buildCursorPrompt", () => {
 			],
 		};
 
-		const result = buildCursorPrompt(ctx, { maxInputTokens: 1000, charsPerToken: 1 });
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 1500, charsPerToken: 1 });
 
 		expect(result.text).toContain("User: latest request");
 		expect(result.text).toContain("User: recent request");
@@ -252,7 +258,7 @@ describe("buildCursorPrompt", () => {
 			],
 		};
 
-		const result = buildCursorPrompt(ctx, { maxInputTokens: 1000, charsPerToken: 1 });
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 1150, charsPerToken: 1 });
 
 		expect(result.text).toContain("User: latest request");
 		expect(result.text).toContain("User: recent request");
