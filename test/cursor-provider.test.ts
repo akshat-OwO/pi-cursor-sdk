@@ -46,7 +46,7 @@ const mockedCreate = vi.mocked(Agent.create);
 const mockedCreateAgentPlatform = vi.mocked(createAgentPlatform);
 
 type RegisteredTool = ToolDefinition<TSchema, unknown, unknown>;
-type TestExtensionContext = Pick<ExtensionContext, "hasUI"> & { ui: Pick<ExtensionContext["ui"], "notify"> };
+type TestExtensionContext = Pick<ExtensionContext, "cwd" | "hasUI"> & { ui: Pick<ExtensionContext["ui"], "notify"> };
 type TestEventHandler = (event: unknown, ctx: TestExtensionContext) => Promise<void> | void;
 
 function createBuiltinToolInfo(name: string): ToolInfo {
@@ -115,7 +115,7 @@ async function registerNativeToolDisplayForTest(registeredTools: RegisteredTool[
 		}),
 	} as unknown as ExtensionAPI);
 	for (const handler of handlers) {
-		await handler({ reason: "startup" }, { hasUI: false, ui: { notify: vi.fn() } });
+		await handler({ reason: "startup" }, { cwd: process.cwd(), hasUI: false, ui: { notify: vi.fn() } });
 	}
 }
 
@@ -520,6 +520,92 @@ describe("streamCursor", () => {
 		expect(replayText).toBe("Final answer only.");
 		expect(replayDone.reason).toBe("stop");
 		expect(replayDone.message.content).toEqual([{ type: "text", text: "Final answer only." }]);
+	});
+
+	it("replays Cursor edit activity through a replay-only native tool", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		const registeredTools: RegisteredTool[] = [];
+		await registerNativeToolDisplayForTest(registeredTools);
+
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
+			opts.onDelta({ update: { type: "tool-call-started", toolCall: { type: "edit", args: { path: "src/index.ts" } }, callId: "c1" } });
+			opts.onDelta({
+				update: {
+					type: "tool-call-completed",
+					toolCall: {
+						type: "edit",
+						args: { path: "src/index.ts" },
+						result: {
+							status: "success",
+							value: { linesAdded: 1, linesRemoved: 1, diffString: "--- a/src/index.ts\n+++ b/src/index.ts" },
+						},
+					},
+					callId: "c1",
+				},
+			});
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "running",
+				wait: runWait,
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			agentId: "agent-1",
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const firstDone = firstEvents.find((e: any) => e.type === "done") as any;
+		const toolCall = firstDone.message.content.find((block: any) => block.type === "toolCall");
+
+		expect(toolCall.name).toBe("cursor_edit");
+		expect(toolCall.arguments).toEqual({ path: "src/index.ts" });
+		const cursorEditTool = registeredTools.find((tool) => tool.name === "cursor_edit");
+		expect(cursorEditTool).toBeDefined();
+		const toolResult = await cursorEditTool!.execute(toolCall.id, toolCall.arguments, undefined, undefined, {});
+		expect(toolResult).toMatchObject({
+			content: [{ type: "text", text: expect.stringContaining("edit src/index.ts") }],
+			details: { cursorToolName: "edit" },
+			terminate: false,
+		});
+		expect(toolResult.content[0].text).toContain("+1 -1");
+
+		await expect(cursorEditTool!.execute("not-recorded", { path: "src/index.ts" }, undefined, undefined, {})).rejects.toThrow(
+			"replay-only tool does not execute file mutations",
+		);
+
+		resolveRun({ id: "run-1", status: "finished", result: "Done." });
+
+		const replayContext = makeContext();
+		replayContext.messages = [
+			...replayContext.messages,
+			firstDone.message,
+			{
+				role: "toolResult",
+				toolCallId: toolCall.id,
+				toolName: "cursor_edit",
+				content: toolResult.content,
+				details: toolResult.details,
+				isError: false,
+				timestamp: 2,
+			},
+		];
+		const replayEvents = await collectEvents(streamCursor(makeModel(), replayContext, { apiKey: "test-key" }));
+		const replayText = replayEvents.filter((e: any) => e.type === "text_delta").map((e: any) => e.delta).join("");
+		expect(replayText).toBe("Done.");
+		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 	});
 
 	it("disposes abandoned native replay runs after the idle timeout", async () => {

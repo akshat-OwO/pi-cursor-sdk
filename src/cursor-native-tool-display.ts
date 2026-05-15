@@ -6,14 +6,16 @@ import {
 	type ExtensionContext,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { TSchema } from "typebox";
+import { Text } from "@earendil-works/pi-tui";
+import { Type, type TSchema } from "typebox";
 import type { CursorPiToolDisplay } from "./cursor-tool-transcript.js";
 
-const NATIVE_CURSOR_TOOL_NAMES = ["read", "bash", "ls"] as const;
+const NATIVE_CURSOR_TOOL_NAMES = ["read", "bash", "ls", "cursor_edit", "cursor_write"] as const;
 type NativeCursorToolName = (typeof NATIVE_CURSOR_TOOL_NAMES)[number];
 const NATIVE_CURSOR_TOOL_DISPLAY_ENV = "PI_CURSOR_NATIVE_TOOL_DISPLAY";
 // Registration-only kill switch for users who want transcript fallback without shadowing read/bash/ls.
 const NATIVE_CURSOR_TOOL_REGISTRATION_ENV = "PI_CURSOR_REGISTER_NATIVE_TOOLS";
+const cursorReplayToolSchema = Type.Object({}, { additionalProperties: true });
 
 export interface CursorNativeToolDisplayItem extends CursorPiToolDisplay {
 	id: string;
@@ -22,6 +24,7 @@ export interface CursorNativeToolDisplayItem extends CursorPiToolDisplay {
 
 const registeredNativeToolNames = new Set<NativeCursorToolName>();
 const nativeToolResults = new Map<string, CursorNativeToolDisplayItem>();
+let currentNativeToolCwd = process.cwd();
 
 function readBooleanEnv(name: string): boolean | undefined {
 	const value = process.env[name]?.trim().toLowerCase();
@@ -77,11 +80,13 @@ export const __testUtils = {
 	reset(): void {
 		registeredNativeToolNames.clear();
 		nativeToolResults.clear();
+		currentNativeToolCwd = process.cwd();
 	},
 };
 
 function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 	definition: ToolDefinition<TParams, TDetails, TState>,
+	getCurrentDefinition: () => ToolDefinition<TParams, TDetails, TState>,
 ): ToolDefinition<TParams, TDetails, TState> {
 	return {
 		...definition,
@@ -94,21 +99,151 @@ function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 					terminate: cursorDisplay.terminate ?? true,
 				};
 			}
-			return definition.execute(toolCallId, params, signal, onUpdate, ctx);
+			return getCurrentDefinition().execute(toolCallId, params, signal, onUpdate, ctx);
 		},
 	};
 }
 
-function registerNativeCursorTool(pi: ExtensionAPI, toolName: NativeCursorToolName, cwd: string): void {
-	if (toolName === "read") {
-		pi.registerTool(wrapNativeCursorTool(createReadToolDefinition(cwd)));
-		return;
+interface CursorReplayToolDetails {
+	cursorToolName?: "edit" | "write";
+	path?: string;
+	linesAdded?: number;
+	linesRemoved?: number;
+	linesCreated?: number;
+	fileSize?: number;
+	diffString?: string;
+}
+
+function asCursorReplayToolDetails(value: unknown): CursorReplayToolDetails | undefined {
+	return value && typeof value === "object" ? (value as CursorReplayToolDetails) : undefined;
+}
+
+function getCursorReplayPath(args: Record<string, unknown> | undefined, details: CursorReplayToolDetails | undefined): string {
+	const argPath = args?.path;
+	return details?.path ?? (typeof argPath === "string" && argPath.trim() ? argPath : "unknown");
+}
+
+type CursorReplayRenderCall = NonNullable<ToolDefinition<typeof cursorReplayToolSchema, unknown>["renderCall"]>;
+type CursorReplayRenderResult = NonNullable<ToolDefinition<typeof cursorReplayToolSchema, unknown>["renderResult"]>;
+type CursorReplayRenderTheme = Parameters<CursorReplayRenderCall>[1];
+
+function formatCursorReplayDiff(diff: string, theme: CursorReplayRenderTheme, maxLines: number): string {
+	const lines = diff.split("\n");
+	const visible = lines.slice(0, maxLines);
+	const rendered = visible.map((line) => {
+		if (line.startsWith("+") && !line.startsWith("+++")) return theme.fg("success", line);
+		if (line.startsWith("-") && !line.startsWith("---")) return theme.fg("error", line);
+		return theme.fg("muted", line);
+	});
+	if (lines.length > maxLines) rendered.push(theme.fg("muted", `... (${lines.length - maxLines} more diff lines)`));
+	return rendered.join("\n");
+}
+
+function renderCursorReplayCall(
+	toolName: "cursor_edit" | "cursor_write",
+	args: Record<string, unknown> | undefined,
+	theme: CursorReplayRenderTheme,
+	isPartial: boolean,
+): Text {
+	if (!isPartial) return new Text("", 0, 0);
+	const cursorToolName = toolName === "cursor_edit" ? "edit" : "write";
+	let text = theme.fg("toolTitle", theme.bold(`Cursor ${cursorToolName} `));
+	text += theme.fg("accent", getCursorReplayPath(args, undefined));
+	return new Text(text, 0, 0);
+}
+
+function pluralize(count: number, noun: string): string {
+	return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function hasCursorEditChanges(details: CursorReplayToolDetails): boolean {
+	return Boolean(details.diffString) || Boolean(details.linesAdded) || Boolean(details.linesRemoved);
+}
+
+function classifyCursorEditOperation(details: CursorReplayToolDetails): "created" | "deleted" | "updated" | "unchanged" {
+	if (!hasCursorEditChanges(details)) return "unchanged";
+	if (details.diffString?.startsWith("--- /dev/null")) return "created";
+	if (details.diffString?.includes("\n+++ /dev/null")) return "deleted";
+	return "updated";
+}
+
+function formatCursorEditSummary(details: CursorReplayToolDetails): string {
+	const operation = classifyCursorEditOperation(details);
+	if (operation === "unchanged") return "no changes needed";
+	if (operation === "created" && details.linesAdded !== undefined) return `created ${pluralize(details.linesAdded, "line")}`;
+	if (operation === "deleted" && details.linesRemoved !== undefined) return `deleted ${pluralize(details.linesRemoved, "line")}`;
+	const parts = [
+		details.linesAdded ? `added ${pluralize(details.linesAdded, "line")}` : undefined,
+		details.linesRemoved ? `removed ${pluralize(details.linesRemoved, "line")}` : undefined,
+	].filter((part): part is string => Boolean(part));
+	return parts.length > 0 ? parts.join(", ") : "updated file";
+}
+
+function renderCursorReplayResult(
+	result: Parameters<CursorReplayRenderResult>[0],
+	options: Parameters<CursorReplayRenderResult>[1],
+	theme: Parameters<CursorReplayRenderResult>[2],
+	isError: boolean,
+): Text {
+	if (options.isPartial) return new Text(theme.fg("warning", "Replaying Cursor tool result..."), 0, 0);
+	const details = asCursorReplayToolDetails(result.details);
+	const content = result.content[0];
+	const text = content?.type === "text" ? content.text : "";
+	if (isError) return new Text(theme.fg("error", text.split("\n")[0] || "Cursor replay failed"), 0, 0);
+
+	if (details?.cursorToolName === "edit") {
+		const summary = formatCursorEditSummary(details);
+		let rendered = `${theme.fg("toolTitle", theme.bold(`Cursor ${classifyCursorEditOperation(details)}`))} ${theme.fg("accent", getCursorReplayPath(undefined, details))} ${theme.fg("success", summary)}`;
+		if (details.diffString) rendered += options.expanded ? `\n${formatCursorReplayDiff(details.diffString, theme, 40)}` : theme.fg("muted", " (expand for diff)");
+		return new Text(rendered, 0, 0);
 	}
-	if (toolName === "bash") {
-		pi.registerTool(wrapNativeCursorTool(createBashToolDefinition(cwd)));
-		return;
+
+	if (details?.cursorToolName === "write") {
+		const parts = [
+			details.linesCreated !== undefined ? `${details.linesCreated} line${details.linesCreated === 1 ? "" : "s"}` : undefined,
+			details.fileSize !== undefined ? `${details.fileSize} bytes` : undefined,
+		].filter(Boolean);
+		const summary = parts.length > 0 ? parts.join(", ") : "written";
+		return new Text(
+			`${theme.fg("toolTitle", theme.bold("Cursor write"))} ${theme.fg("accent", getCursorReplayPath(undefined, details))} ${theme.fg("success", summary)}`,
+			0,
+			0,
+		);
 	}
-	pi.registerTool(wrapNativeCursorTool(createLsToolDefinition(cwd)));
+
+	return new Text(text || theme.fg("success", "Cursor tool result replayed"), 0, 0);
+}
+
+function createCursorReplayOnlyToolDefinition(toolName: "cursor_edit" | "cursor_write"): ToolDefinition<typeof cursorReplayToolSchema, unknown> {
+	const cursorToolName = toolName === "cursor_edit" ? "edit" : "write";
+	return {
+		name: toolName,
+		label: `Cursor ${cursorToolName}`,
+		description: `Replay display for a Cursor SDK ${cursorToolName} operation. This tool only returns recorded Cursor results and never mutates files directly.`,
+		parameters: cursorReplayToolSchema,
+		renderShell: "self",
+		async execute() {
+			throw new Error(`No recorded Cursor ${cursorToolName} result was available. This replay-only tool does not execute file mutations.`);
+		},
+			renderCall(args, theme, context) {
+			return renderCursorReplayCall(toolName, args as Record<string, unknown>, theme, context.isPartial);
+		},
+		renderResult(result, options, theme, context) {
+			return renderCursorReplayResult(result, options, theme, context.isError);
+		},
+	};
+}
+
+function createNativeCursorToolDefinition(toolName: NativeCursorToolName, cwd: string): ToolDefinition<TSchema, unknown, unknown> {
+	if (toolName === "read") return createReadToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
+	if (toolName === "bash") return createBashToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
+	if (toolName === "ls") return createLsToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
+	return createCursorReplayOnlyToolDefinition(toolName) as ToolDefinition<TSchema, unknown, unknown>;
+}
+
+function registerNativeCursorTool(pi: ExtensionAPI, toolName: NativeCursorToolName): void {
+	const definition = createNativeCursorToolDefinition(toolName, currentNativeToolCwd);
+	pi.registerTool(wrapNativeCursorTool(definition, () => createNativeCursorToolDefinition(toolName, currentNativeToolCwd)));
 }
 
 function hasNonBuiltinTool(pi: ExtensionAPI, toolName: NativeCursorToolName): boolean {
@@ -122,7 +257,7 @@ function registerAvailableNativeCursorTools(pi: ExtensionAPI, ctx: ExtensionCont
 		return;
 	}
 
-	const cwd = ctx.cwd;
+	currentNativeToolCwd = ctx.cwd;
 	const skippedToolNames: string[] = [];
 	for (const toolName of NATIVE_CURSOR_TOOL_NAMES) {
 		if (registeredNativeToolNames.has(toolName)) continue;
@@ -130,7 +265,7 @@ function registerAvailableNativeCursorTools(pi: ExtensionAPI, ctx: ExtensionCont
 			skippedToolNames.push(toolName);
 			continue;
 		}
-		registerNativeCursorTool(pi, toolName, cwd);
+		registerNativeCursorTool(pi, toolName);
 		registeredNativeToolNames.add(toolName);
 	}
 

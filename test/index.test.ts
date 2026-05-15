@@ -142,8 +142,8 @@ describe("extension factory", () => {
 			"cursor-refresh-models",
 			expect.objectContaining({ description: expect.stringContaining("Refresh the live Cursor model catalog") }),
 		);
-		expect(pi.registerTool).toHaveBeenCalledTimes(3);
-		expect(pi._tools.map((tool) => tool.name)).toEqual(["read", "bash", "ls"]);
+		expect(pi.registerTool).toHaveBeenCalledTimes(5);
+		expect(pi._tools.map((tool) => tool.name)).toEqual(["read", "bash", "ls", "cursor_edit", "cursor_write"]);
 		expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
 		expect(pi.on).toHaveBeenCalledWith("model_select", expect.any(Function));
 		expect(mockedDiscover).toHaveBeenCalledOnce();
@@ -331,6 +331,30 @@ describe("extension factory", () => {
 		}
 	});
 
+	it("updates registered native Cursor tool wrappers to the latest pi session cwd", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		mockedDiscover.mockResolvedValueOnce([]);
+		const firstDir = mkdtempSync(join(tmpdir(), "pi-cursor-native-cwd-first-"));
+		const secondDir = mkdtempSync(join(tmpdir(), "pi-cursor-native-cwd-second-"));
+		try {
+			writeFileSync(join(firstDir, "session-file.txt"), "from first cwd\n");
+			writeFileSync(join(secondDir, "session-file.txt"), "from second cwd\n");
+			const pi = createMockPi();
+			await extensionFactory(pi as unknown as ExtensionAPI);
+			await runSessionStartHandlers(pi, { cwd: firstDir });
+			await runSessionStartHandlers(pi, { cwd: secondDir });
+
+			const readTool = pi._tools.find((tool) => tool.name === "read");
+			const result = await readTool.execute("ordinary-read", { path: "session-file.txt" }, undefined, undefined, {});
+
+			expect(pi.registerTool).toHaveBeenCalledTimes(5);
+			expect(result.content).toEqual([{ type: "text", text: "from second cwd\n" }]);
+		} finally {
+			rmSync(firstDir, { recursive: true, force: true });
+			rmSync(secondDir, { recursive: true, force: true });
+		}
+	});
+
 	it("registered native Cursor tool wrappers return recorded Cursor results without executing built-ins", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
@@ -400,9 +424,10 @@ describe("extension factory", () => {
 		await extensionFactory(pi as unknown as ExtensionAPI);
 		await runSessionStartHandlers(pi);
 
-		expect(pi._tools.map((tool) => tool.name)).toEqual(["bash", "ls"]);
+		expect(pi._tools.map((tool) => tool.name)).toEqual(["bash", "ls", "cursor_edit", "cursor_write"]);
 		expect(canRenderCursorToolNatively("read")).toBe(false);
 		expect(canRenderCursorToolNatively("bash")).toBe(true);
+		expect(canRenderCursorToolNatively("cursor_edit")).toBe(true);
 		expect(canRenderCursorToolNatively("ls")).toBe(true);
 	});
 });

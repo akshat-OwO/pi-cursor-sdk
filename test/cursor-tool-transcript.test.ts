@@ -73,6 +73,28 @@ describe("formatCursorToolTranscript", () => {
 		}
 	});
 
+	it("does not fill empty Cursor read results through sensitive workspace symlink names", () => {
+		const dir = mkdtempSync(join(tmpdir(), "cursor-tool-transcript-"));
+		try {
+			writeFileSync(join(dir, "safe-target.txt"), "API_KEY=do-not-show\n");
+			symlinkSync(join(dir, "safe-target.txt"), join(dir, ".env"));
+
+			const transcript = formatCursorToolTranscript(
+				{
+					name: "read",
+					args: { path: join(dir, ".env") },
+					result: { status: "success", value: { content: "", totalLines: 1, fileSize: 20 } },
+				},
+				{ cwd: dir },
+			);
+
+			expect(transcript).toContain("read .env");
+			expect(transcript).not.toContain("do-not-show");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("does not fill empty Cursor read results through workspace symlinks to outside files", () => {
 		const dir = mkdtempSync(join(tmpdir(), "cursor-tool-transcript-"));
 		const outsideDir = mkdtempSync(join(tmpdir(), "cursor-tool-transcript-outside-"));
@@ -147,6 +169,36 @@ describe("formatCursorToolTranscript", () => {
 			isError: false,
 		});
 		expect(display.result.content[0].text).not.toContain("ls .");
+	});
+
+	it("builds replay-only native pi display data for Cursor edit and write calls", () => {
+		const editDisplay = buildCursorPiToolDisplay({
+			name: "edit",
+			args: { path: "src/index.ts" },
+			result: { status: "success", value: { linesAdded: 1, linesRemoved: 1, diffString: "--- a/src/index.ts\n+++ b/src/index.ts" } },
+		});
+		const writeDisplay = buildCursorPiToolDisplay({
+			name: "write",
+			args: { path: "new.txt" },
+			result: { status: "success", value: { linesCreated: 1, fileSize: 6 } },
+		});
+
+		expect(editDisplay).toMatchObject({
+			toolName: "cursor_edit",
+			args: { path: "src/index.ts" },
+			result: { details: { cursorToolName: "edit" } },
+			isError: false,
+		});
+		expect(editDisplay.result.content[0].text).toContain("edit src/index.ts");
+		expect(editDisplay.result.content[0].text).toContain("+1 -1");
+		expect(writeDisplay).toMatchObject({
+			toolName: "cursor_write",
+			args: { path: "new.txt" },
+			result: { details: { cursorToolName: "write" } },
+			isError: false,
+		});
+		expect(writeDisplay.result.content[0].text).toContain("write new.txt");
+		expect(writeDisplay.result.content[0].text).toContain("Created 1 lines");
 	});
 
 	it("builds native pi display data for Cursor read and shell calls", () => {

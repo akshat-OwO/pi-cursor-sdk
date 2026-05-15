@@ -203,7 +203,7 @@ function readFilePreview(path: string, options: TranscriptOptions): string | und
 	try {
 		const realCwd = realpathSync(cwd);
 		const realFilePath = realpathSync(filePath);
-		if (!isPathWithinCwd(realFilePath, realCwd) || isSensitivePreviewPath(realFilePath)) return undefined;
+		if (!isPathWithinCwd(realFilePath, realCwd) || isSensitivePreviewPath(filePath) || isSensitivePreviewPath(realFilePath)) return undefined;
 
 		const stat = statSync(realFilePath);
 		if (!stat.isFile()) return undefined;
@@ -540,6 +540,37 @@ export function buildCursorPiToolDisplay(toolCall: unknown, options: TranscriptO
 			toolName: "ls",
 			args,
 			result: textToolResult(result.status === "error" ? formatError(result.error) : getLsBody(result, options).trim()),
+			isError: result.status === "error",
+		};
+	}
+
+	if (name === "edit") {
+		const value = asRecord(result.value);
+		return {
+			toolName: "cursor_edit",
+			args,
+			result: textToolResult(formatEdit(args, result, options), {
+				cursorToolName: "edit",
+				path: typeof args.path === "string" ? formatDisplayPath(args.path, options.cwd) : undefined,
+				linesAdded: getNumber(value, "linesAdded"),
+				linesRemoved: getNumber(value, "linesRemoved"),
+				diffString: getString(value, "diffString"),
+			}),
+			isError: result.status === "error",
+		};
+	}
+
+	if (name === "write") {
+		const value = asRecord(result.value);
+		return {
+			toolName: "cursor_write",
+			args,
+			result: textToolResult(formatWrite(args, result, options), {
+				cursorToolName: "write",
+				path: typeof args.path === "string" ? formatDisplayPath(args.path, options.cwd) : undefined,
+				linesCreated: getNumber(value, "linesCreated"),
+				fileSize: getNumber(value, "fileSize"),
+			}),
 			isError: result.status === "error",
 		};
 	}
