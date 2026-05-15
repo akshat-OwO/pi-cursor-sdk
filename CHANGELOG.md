@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.10 - 2026-05-15
+
+### Added
+
+- Replay Cursor SDK `edit` and `write` activity through native pi tool-use turns using non-mutating `cursor_edit` and `cursor_write` cards, so Cursor file changes are visible as first-class tool activity without shadowing pi's built-in `edit` and `write` schemas.
+- Add a maintainer `npm run refresh:cursor-snapshots` workflow for refreshing the reviewable Cursor fallback model catalog and optional checkpoint-derived context-window snapshot before releases.
+
+### Changed
+
+- Improve Cursor edit/write replay card UX with concise created/updated/deleted/unchanged summaries and expanded colored diffs.
+- Clarify image follow-up behavior: only latest user-message image bytes are forwarded; earlier images remain transcript placeholders and should be reattached or described.
+- Allow `/cursor-refresh-models` to refresh the live Cursor model catalog after auth changes without restarting pi.
+- Label local read fallback previews as transcript-time local previews when Cursor read result content is unavailable.
+
+### Fixed
+
+- Prevent local read fallback previews from escaping the workspace through symlinks and from bypassing sensitive-path checks through sensitive symlink names.
+- Budget oversized prompt history before `Agent.send`, including image-token reservations, while preserving system/tool-boundary instructions and the latest user request.
+- Preserve assistant text emitted before native Cursor tool replay.
+- Use the pi session cwd for native replay tool registration and update fallback execution to the latest session cwd.
+
 ## 0.1.9 - 2026-05-14
 
 ### Fixed
