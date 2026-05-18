@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.13 - 2026-05-18
+
+### Fixed
+- Restored lightweight GitHub pi install behavior by removing bundled dependency metadata from the published package. The package already uses the latest `@cursor/sdk` `1.0.13`; local and GitHub installs continue to use the repo-level audited lockfile and overrides.
+
 ## 0.1.12 - 2026-05-18
 
 ### Fixed
