@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.11 - 2026-05-18
+
+### Changed
+- Updated the local pi package baseline to `@earendil-works/*` `0.75.3`, including the Node.js `>=22.19.0` runtime floor and refreshed npm lockfile.
+- Added prompt metadata for the non-mutating Cursor replay tools so pi can describe `cursor_edit` and `cursor_write` more clearly in tool guidance.
+- Removed tracked CueLoop runtime state from the repository and ignored local `.cueloop/` artifacts.
+
+
 ## 0.1.10 - 2026-05-15
 
 ### Added
