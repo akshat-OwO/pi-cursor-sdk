@@ -91,6 +91,7 @@ async function collectEvents(stream: ReturnType<typeof streamCursor>) {
 
 async function registerNativeToolDisplayForTest(registeredTools: RegisteredTool[]): Promise<void> {
 	const handlers: TestEventHandler[] = [];
+	let activeToolNames = ["read", "bash", "edit", "write"];
 	registerCursorNativeToolDisplay({
 		on: vi.fn((event: string, handler: TestEventHandler) => {
 			if (event === "session_start") handlers.push(handler);
@@ -100,7 +101,7 @@ async function registerNativeToolDisplayForTest(registeredTools: RegisteredTool[
 		}),
 		getAllTools: vi.fn(() => {
 			const toolsByName = new Map<string, ToolInfo>();
-			for (const name of ["read", "bash", "ls"]) {
+			for (const name of ["read", "bash", "grep", "ls", "edit", "write"]) {
 				const tool = createBuiltinToolInfo(name);
 				toolsByName.set(tool.name, tool);
 			}
@@ -113,6 +114,10 @@ async function registerNativeToolDisplayForTest(registeredTools: RegisteredTool[
 				});
 			}
 			return [...toolsByName.values()];
+		}),
+		getActiveTools: vi.fn(() => [...activeToolNames]),
+		setActiveTools: vi.fn((toolNames: string[]) => {
+			activeToolNames = [...toolNames];
 		}),
 	} as unknown as ExtensionAPI);
 	for (const handler of handlers) {
@@ -524,7 +529,7 @@ describe("streamCursor", () => {
 		expect(replayDone.message.content).toEqual([{ type: "text", text: "Final answer only." }]);
 	});
 
-	it("replays Cursor grep activity through native bash display", async () => {
+	it("replays Cursor grep activity through native grep display", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		const registeredTools: RegisteredTool[] = [];
 		await registerNativeToolDisplayForTest(registeredTools);
@@ -587,12 +592,12 @@ describe("streamCursor", () => {
 		const trace = firstEvents.filter((e: any) => e.type === "thinking_delta").map((e: any) => e.delta).join("");
 
 		expect(firstDone.reason).toBe("toolUse");
-		expect(toolCall.name).toBe("bash");
-		expect(toolCall.arguments).toEqual({ command: 'grep "sem_reindex" src' });
+		expect(toolCall.name).toBe("grep");
+		expect(toolCall.arguments).toEqual({ pattern: "sem_reindex", path: "src" });
 		expect(trace).not.toContain("src/tools/reindex.ts");
 
-		const bashTool = registeredTools.find((tool) => tool.name === "bash");
-		const toolResult = await bashTool!.execute(toolCall.id, toolCall.arguments, undefined, undefined, {});
+		const grepTool = registeredTools.find((tool) => tool.name === "grep");
+		const toolResult = await grepTool!.execute(toolCall.id, toolCall.arguments, undefined, undefined, {});
 		expect(toolResult.content[0].text).toContain("src/tools/reindex.ts");
 
 		resolveRun({ id: "run-1", status: "finished", result: "Done." });
@@ -604,7 +609,7 @@ describe("streamCursor", () => {
 			{
 				role: "toolResult",
 				toolCallId: toolCall.id,
-				toolName: "bash",
+				toolName: "grep",
 				content: toolResult.content,
 				details: toolResult.details,
 				isError: false,

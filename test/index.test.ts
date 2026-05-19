@@ -62,7 +62,8 @@ function createMockPi(existingTools?: ToolInfo[]) {
 	const commands = new Map<string, RegisteredCommand>();
 	const tools: RegisteredTool[] = [];
 	const handlers = new Map<string, TestEventHandler[]>();
-	const initialTools = existingTools ?? ["read", "bash", "ls"].map(createBuiltinToolInfo);
+	let activeToolNames = ["read", "bash", "edit", "write"];
+	const initialTools = existingTools ?? ["read", "bash", "grep", "ls", "edit", "write"].map(createBuiltinToolInfo);
 	return {
 		registerProvider: vi.fn((name: string, config: ProviderConfig) => {
 			registered.push({ name, config });
@@ -87,6 +88,10 @@ function createMockPi(existingTools?: ToolInfo[]) {
 			}
 			return [...toolsByName.values()];
 		}),
+		getActiveTools: vi.fn(() => [...activeToolNames]),
+		setActiveTools: vi.fn((toolNames: string[]) => {
+			activeToolNames = [...toolNames];
+		}),
 		sendMessage: vi.fn(),
 		on: vi.fn((event: string, handler: TestEventHandler) => {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
@@ -97,6 +102,7 @@ function createMockPi(existingTools?: ToolInfo[]) {
 		_commands: commands,
 		_tools: tools,
 		_handlers: handlers,
+		_activeToolNames: () => activeToolNames,
 	};
 }
 
@@ -144,8 +150,9 @@ describe("extension factory", () => {
 			"cursor-refresh-models",
 			expect.objectContaining({ description: expect.stringContaining("Refresh the live Cursor model catalog") }),
 		);
-		expect(pi.registerTool).toHaveBeenCalledTimes(5);
-		expect(pi._tools.map((tool) => tool.name)).toEqual(["read", "bash", "ls", "cursor_edit", "cursor_write"]);
+		expect(pi.registerTool).toHaveBeenCalledTimes(6);
+		expect(pi._tools.map((tool) => tool.name)).toEqual(["read", "bash", "grep", "ls", "cursor_edit", "cursor_write"]);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "bash", "edit", "write", "grep", "ls", "cursor_edit", "cursor_write"]);
 		expect(pi.on).toHaveBeenCalledWith("session_start", expect.any(Function));
 		expect(pi.on).toHaveBeenCalledWith("model_select", expect.any(Function));
 		expect(mockedDiscover).toHaveBeenCalledOnce();
@@ -314,6 +321,20 @@ describe("extension factory", () => {
 		expect(notify).not.toHaveBeenCalled();
 	});
 
+	it("defers native Cursor tool wrapper registration until session_start", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		pi.getAllTools.mockImplementation(() => {
+			throw new Error("runtime tool actions are unavailable during extension load");
+		});
+
+		await extensionFactory(pi as unknown as ExtensionAPI);
+
+		expect(pi.registerTool).not.toHaveBeenCalled();
+		expect(canRenderCursorToolNatively("grep")).toBe(false);
+	});
+
 	it("registers native Cursor tool wrappers with the pi session cwd", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
@@ -349,7 +370,7 @@ describe("extension factory", () => {
 			const readTool = pi._tools.find((tool) => tool.name === "read");
 			const result = await readTool.execute("ordinary-read", { path: "session-file.txt" }, undefined, undefined, {});
 
-			expect(pi.registerTool).toHaveBeenCalledTimes(5);
+			expect(pi.registerTool).toHaveBeenCalledTimes(6);
 			expect(result.content).toEqual([{ type: "text", text: "from second cwd\n" }]);
 		} finally {
 			rmSync(firstDir, { recursive: true, force: true });
@@ -421,14 +442,16 @@ describe("extension factory", () => {
 				},
 			},
 			createBuiltinToolInfo("bash"),
+			createBuiltinToolInfo("grep"),
 			createBuiltinToolInfo("ls"),
 		]);
 		await extensionFactory(pi as unknown as ExtensionAPI);
 		await runSessionStartHandlers(pi);
 
-		expect(pi._tools.map((tool) => tool.name)).toEqual(["bash", "ls", "cursor_edit", "cursor_write"]);
+		expect(pi._tools.map((tool) => tool.name)).toEqual(["bash", "grep", "ls", "cursor_edit", "cursor_write"]);
 		expect(canRenderCursorToolNatively("read")).toBe(false);
 		expect(canRenderCursorToolNatively("bash")).toBe(true);
+		expect(canRenderCursorToolNatively("grep")).toBe(true);
 		expect(canRenderCursorToolNatively("cursor_edit")).toBe(true);
 		expect(canRenderCursorToolNatively("ls")).toBe(true);
 	});

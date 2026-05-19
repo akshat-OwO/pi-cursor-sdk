@@ -6,6 +6,7 @@ const DEFAULT_MAX_TRANSCRIPT_LINES = 800;
 const DEFAULT_MAX_LIST_ITEMS = 200;
 const DEFAULT_READ_TRANSCRIPT_CHARS = 4000;
 const DEFAULT_READ_TRANSCRIPT_LINES = 12;
+const DEFAULT_NATIVE_READ_DISPLAY_LINES = 20;
 const LOCAL_READ_PREVIEW_NOTICE =
 	"[local file preview at transcript time; Cursor read result content was unavailable]";
 
@@ -256,6 +257,30 @@ function formatRead(args: Record<string, unknown>, result: NormalizedResult, opt
 	return joinSections(`read ${path}`, limitText(getReadContent(args, result, options), readOptions, totalLines));
 }
 
+function buildReadDisplayArgs(args: Record<string, unknown>, options: TranscriptOptions): Record<string, unknown> {
+	const rawPath = typeof args.path === "string" ? args.path : undefined;
+	return rawPath ? { ...args, path: formatDisplayPath(rawPath, options.cwd) } : args;
+}
+
+function formatNativeReadDisplayContent(args: Record<string, unknown>, result: NormalizedResult, options: TranscriptOptions): string {
+	const value = asRecord(result.value);
+	const totalLines = getNumber(value, "totalLines");
+	const readOptions = {
+		...options,
+		maxChars: options.maxChars ?? DEFAULT_READ_TRANSCRIPT_CHARS,
+		maxLines: options.maxLines ?? DEFAULT_NATIVE_READ_DISPLAY_LINES,
+	};
+	const content = getReadContent(args, result, readOptions);
+	if (totalLines === undefined) return limitText(content, readOptions);
+
+	const maxLines = readOptions.maxLines ?? DEFAULT_NATIVE_READ_DISPLAY_LINES;
+	const lines = content.split("\n");
+	const visible = lines.slice(0, maxLines).join("\n");
+	if (totalLines <= maxLines && lines.length <= maxLines) return visible;
+	if (visible.length > (readOptions.maxChars ?? DEFAULT_READ_TRANSCRIPT_CHARS)) return limitText(content, readOptions, totalLines);
+	return `${visible}\n\n[${Math.max(totalLines - maxLines, 0)} more lines in file. Use offset=${maxLines + 1} to continue.]`;
+}
+
 function getShellOutput(result: NormalizedResult): { text: string; exitCode: number | undefined } {
 	const value = asRecord(result.value);
 	const stdout = getString(value, "stdout") ?? "";
@@ -266,6 +291,16 @@ function getShellOutput(result: NormalizedResult): { text: string; exitCode: num
 	if (stderr) outputParts.push(stderr.trimEnd());
 	if (exitCode !== undefined && exitCode !== 0) outputParts.push(`Command exited with code ${exitCode}`);
 	return { text: outputParts.filter(Boolean).join("\n\n") || "(no output)", exitCode };
+}
+
+function buildShellDisplayArgs(args: Record<string, unknown>): Record<string, unknown> {
+	const command = typeof args.command === "string" ? args.command : undefined;
+	const timeoutMs = getNumber(args, "timeout");
+	const displayArgs: Record<string, unknown> = command ? { command } : { ...args };
+	if (timeoutMs !== undefined) {
+		displayArgs.timeout = timeoutMs / 1000;
+	}
+	return displayArgs;
 }
 
 function formatShell(args: Record<string, unknown>, result: NormalizedResult, options: TranscriptOptions): string {
@@ -314,6 +349,10 @@ function formatSearchCount(totalMatches: number): string {
 	return totalMatches === 1 ? "1 match" : `${totalMatches} matches`;
 }
 
+function formatSearchFile(file: string): string {
+	return file.endsWith(":") ? file.slice(0, -1) : file;
+}
+
 function collectSearchResults(value: unknown): string[] {
 	const record = asRecord(value);
 	const outputs: unknown[] = [];
@@ -339,7 +378,7 @@ function collectSearchResults(value: unknown): string[] {
 			}
 		} else if (type === "files") {
 			const files = getArray(output, "files") ?? [];
-			lines.push(...files.filter((entry): entry is string => typeof entry === "string"));
+			lines.push(...files.filter((entry): entry is string => typeof entry === "string").map(formatSearchFile));
 		} else if (type === "count") {
 			const counts = getArray(output, "counts") ?? [];
 			for (const count of counts) {
@@ -369,6 +408,23 @@ function synthesizeGrepBashCommand(args: Record<string, unknown>, options: Trans
 	const path = typeof args.path === "string" ? formatDisplayPath(args.path, options.cwd) : undefined;
 	const glob = typeof args.glob === "string" ? args.glob : undefined;
 	return ["grep", pattern && JSON.stringify(pattern), path ?? glob].filter(Boolean).join(" ");
+}
+
+function buildGrepDisplayArgs(args: Record<string, unknown>, options: TranscriptOptions): Record<string, unknown> {
+	const displayArgs: Record<string, unknown> = {};
+	const pattern = typeof args.pattern === "string" ? args.pattern : undefined;
+	const path = typeof args.path === "string" ? formatDisplayPath(args.path, options.cwd) : undefined;
+	const glob = typeof args.glob === "string" ? args.glob : undefined;
+	const ignoreCase = getBoolean(args, "caseInsensitive");
+	const context = getNumber(args, "context") ?? getNumber(args, "contextBefore") ?? getNumber(args, "contextAfter");
+	const limit = getNumber(args, "headLimit");
+	if (pattern !== undefined) displayArgs.pattern = pattern;
+	if (path !== undefined) displayArgs.path = path;
+	if (glob !== undefined) displayArgs.glob = glob;
+	if (ignoreCase !== undefined) displayArgs.ignoreCase = ignoreCase;
+	if (context !== undefined) displayArgs.context = context;
+	if (limit !== undefined) displayArgs.limit = limit;
+	return Object.keys(displayArgs).length > 0 ? displayArgs : args;
 }
 
 function synthesizeGlobBashCommand(args: Record<string, unknown>, options: TranscriptOptions): string {
@@ -543,17 +599,10 @@ export function buildCursorPiToolDisplay(toolCall: unknown, options: TranscriptO
 
 	if (name === "read") {
 		const isError = result.status === "error";
-		const value = asRecord(result.value);
-		const totalLines = getNumber(value, "totalLines");
-		const readOptions = {
-			...options,
-			maxChars: options.maxChars ?? DEFAULT_READ_TRANSCRIPT_CHARS,
-			maxLines: options.maxLines ?? DEFAULT_READ_TRANSCRIPT_LINES,
-		};
 		return {
 			toolName: "read",
-			args,
-			result: textToolResult(isError ? formatError(result.error) : limitText(getReadContent(args, result, options), readOptions, totalLines)),
+			args: buildReadDisplayArgs(args, options),
+			result: textToolResult(isError ? formatError(result.error) : formatNativeReadDisplayContent(args, result, options)),
 			isError,
 		};
 	}
@@ -563,7 +612,7 @@ export function buildCursorPiToolDisplay(toolCall: unknown, options: TranscriptO
 		const isError = result.status === "error" || (shellOutput.exitCode !== undefined && shellOutput.exitCode !== 0);
 		return {
 			toolName: "bash",
-			args,
+			args: buildShellDisplayArgs(args),
 			result: textToolResult(result.status === "error" ? formatError(result.error) : limitText(shellOutput.text, options)),
 			isError,
 		};
@@ -572,8 +621,8 @@ export function buildCursorPiToolDisplay(toolCall: unknown, options: TranscriptO
 	if (name === "grep") {
 		const isError = result.status === "error";
 		return {
-			toolName: "bash",
-			args: { command: synthesizeGrepBashCommand(args, options) },
+			toolName: "grep",
+			args: buildGrepDisplayArgs(args, options),
 			result: textToolResult(isError ? formatError(result.error) : getGrepBody(result, options)),
 			isError,
 		};

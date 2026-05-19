@@ -209,7 +209,7 @@ describe("formatCursorToolTranscript", () => {
 		});
 		const shellDisplay = buildCursorPiToolDisplay({
 			name: "run_terminal_cmd",
-			args: { command: "date" },
+			args: { command: "date", timeout: 30000 },
 			result: { status: "success", value: { stdout: "Sat May  9\n", stderr: "", exitCode: 0 } },
 		});
 
@@ -221,13 +221,31 @@ describe("formatCursorToolTranscript", () => {
 		});
 		expect(shellDisplay).toMatchObject({
 			toolName: "bash",
-			args: { command: "date" },
+			args: { command: "date", timeout: 30 },
 			result: { content: [{ type: "text", text: "Sat May  9" }] },
 			isError: false,
 		});
 	});
 
-	it("builds native pi bash display data for Cursor grep and glob calls", () => {
+	it("normalizes native Cursor read display paths and uses pi-like continuation text", () => {
+		const cwd = "/repo";
+		const content = Array.from({ length: 25 }, (_, index) => `line ${index + 1}`).join("\n");
+		const display = buildCursorPiToolDisplay(
+			{
+				name: "read",
+				args: { path: "/repo/README.md" },
+				result: { status: "success", value: { content, totalLines: 25, fileSize: content.length } },
+			},
+			{ cwd },
+		);
+
+		expect(display.args).toEqual({ path: "README.md" });
+		expect(display.result.content[0].text).toBe(
+			`${Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n")}\n\n[5 more lines in file. Use offset=21 to continue.]`,
+		);
+	});
+
+	it("builds native pi grep display data for Cursor grep calls and bash display data for Cursor glob calls", () => {
 		const grepDisplay = buildCursorPiToolDisplay({
 			type: "grep",
 			args: { pattern: "getActiveTools|sem_reindex", path: "src" },
@@ -237,7 +255,7 @@ describe("formatCursorToolTranscript", () => {
 					workspaceResults: {
 						src: {
 							type: "files",
-							output: { files: ["src/tools/reindex.ts", "src/tools/status.ts"] },
+							output: { files: ["src/tools/reindex.ts:", "src/tools/status.ts:"] },
 						},
 					},
 				},
@@ -260,8 +278,8 @@ describe("formatCursorToolTranscript", () => {
 		});
 
 		expect(grepDisplay).toMatchObject({
-			toolName: "bash",
-			args: { command: 'grep "getActiveTools|sem_reindex" src' },
+			toolName: "grep",
+			args: { pattern: "getActiveTools|sem_reindex", path: "src" },
 			result: { content: [{ type: "text", text: "src/tools/reindex.ts\nsrc/tools/status.ts" }] },
 			isError: false,
 		});

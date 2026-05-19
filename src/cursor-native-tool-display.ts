@@ -1,5 +1,6 @@
 import {
 	createBashToolDefinition,
+	createGrepToolDefinition,
 	createLsToolDefinition,
 	createReadToolDefinition,
 	type ExtensionAPI,
@@ -11,7 +12,7 @@ import { Type, type TSchema } from "typebox";
 import { getCursorSessionCwd } from "./cursor-session-cwd.js";
 import type { CursorPiToolDisplay } from "./cursor-tool-transcript.js";
 
-const NATIVE_CURSOR_TOOL_NAMES = ["read", "bash", "ls", "cursor_edit", "cursor_write"] as const;
+const NATIVE_CURSOR_TOOL_NAMES = ["read", "bash", "grep", "ls", "cursor_edit", "cursor_write"] as const;
 type NativeCursorToolName = (typeof NATIVE_CURSOR_TOOL_NAMES)[number];
 const NATIVE_CURSOR_TOOL_DISPLAY_ENV = "PI_CURSOR_NATIVE_TOOL_DISPLAY";
 // Registration-only kill switch for users who want transcript fallback without shadowing read/bash/ls.
@@ -240,6 +241,7 @@ function createCursorReplayOnlyToolDefinition(toolName: "cursor_edit" | "cursor_
 function createNativeCursorToolDefinition(toolName: NativeCursorToolName, cwd: string): ToolDefinition<TSchema, unknown, unknown> {
 	if (toolName === "read") return createReadToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
 	if (toolName === "bash") return createBashToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
+	if (toolName === "grep") return createGrepToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
 	if (toolName === "ls") return createLsToolDefinition(cwd) as ToolDefinition<TSchema, unknown, unknown>;
 	return createCursorReplayOnlyToolDefinition(toolName) as ToolDefinition<TSchema, unknown, unknown>;
 }
@@ -254,7 +256,21 @@ function hasNonBuiltinTool(pi: ExtensionAPI, toolName: NativeCursorToolName): bo
 	return existingTool !== undefined && existingTool.sourceInfo.source !== "builtin";
 }
 
-function registerAvailableNativeCursorTools(pi: ExtensionAPI, ctx: ExtensionContext): void {
+type NativeRegistrationContext = { hasUI: boolean; ui: Pick<ExtensionContext["ui"], "notify"> };
+
+function activateRegisteredNativeCursorTools(pi: ExtensionAPI): void {
+	if (registeredNativeToolNames.size === 0) return;
+	const activeToolNames = new Set(pi.getActiveTools());
+	let changed = false;
+	for (const toolName of registeredNativeToolNames) {
+		if (activeToolNames.has(toolName)) continue;
+		activeToolNames.add(toolName);
+		changed = true;
+	}
+	if (changed) pi.setActiveTools([...activeToolNames]);
+}
+
+function registerAvailableNativeCursorTools(pi: ExtensionAPI, ctx: NativeRegistrationContext): void {
 	if (!isCursorNativeToolRegistrationRequested()) {
 		registeredNativeToolNames.clear();
 		return;
@@ -270,6 +286,8 @@ function registerAvailableNativeCursorTools(pi: ExtensionAPI, ctx: ExtensionCont
 		registerNativeCursorTool(pi, toolName);
 		registeredNativeToolNames.add(toolName);
 	}
+
+	activateRegisteredNativeCursorTools(pi);
 
 	if (skippedToolNames.length > 0 && readBooleanEnv(NATIVE_CURSOR_TOOL_DISPLAY_ENV) === true && ctx.hasUI) {
 		ctx.ui.notify(

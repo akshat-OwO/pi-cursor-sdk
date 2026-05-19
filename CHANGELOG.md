@@ -4,11 +4,14 @@
 
 ### Added
 
-- Replay Cursor SDK `grep` and `glob` activity through native pi `bash` cards with synthesized command labels, so search activity matches shell/read card UX in interactive TTY sessions.
+- Replay Cursor SDK `grep` activity through native pi `grep` cards and `glob` activity through native pi `bash` cards with synthesized command labels, so search activity matches built-in tool UX in interactive TTY sessions.
 
 ### Fixed
 
 - Format zero-match Cursor grep results as `(no matches)` instead of raw `{ "totalMatches": 0 }` JSON in native replay and transcript output.
+- Strip trailing colons from Cursor grep file-list replay output.
+- Make native Cursor read replay closer to pi's built-in read cards by displaying session-relative paths and 20-line continuation hints.
+- Convert Cursor SDK shell timeouts from milliseconds to seconds in native bash replay cards instead of rendering `30000ms` as `30000s`.
 - Use the pi session cwd for Cursor `Agent.create`, not only native tool replay display. Completes the 0.1.10 cwd work that previously updated replay registration but left the Cursor agent runtime on `process.cwd()`.
 
 ## 0.1.14 - 2026-05-18
