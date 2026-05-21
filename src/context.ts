@@ -1,5 +1,6 @@
 import type { Context, Message, ToolCall } from "@earendil-works/pi-ai";
 import type { SDKImage } from "@cursor/sdk";
+import { getCursorPiBridgeContractText } from "./cursor-bridge-contract.js";
 import { getCursorReplayPromptLabel } from "./cursor-tool-names.js";
 
 export interface CursorPrompt {
@@ -172,6 +173,7 @@ export function buildCursorPrompt(context: Context, options: CursorPromptOptions
 		[
 			"Cursor SDK tool boundary:",
 			"You can call only tools actually exposed by Cursor SDK in this run. Pi tool names, replay tool names, and transcript tool names are context only, not callable capabilities.",
+			getCursorPiBridgeContractText(),
 			"If asked to list or exercise available tools, list and exercise Cursor SDK tools only; do not claim access to pi-side tools from the system prompt unless Cursor exposes an equivalent tool that runs.",
 			"Use pi__cursor_ask_question for material choices if exposed.",
 			"Web: use Cursor web/search/browser/MCP or say web search is not configured; do not claim WebSearch/WebFetch unless Cursor executes them.",

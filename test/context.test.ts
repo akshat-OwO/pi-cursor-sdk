@@ -336,7 +336,7 @@ describe("buildCursorPrompt", () => {
 			],
 		};
 
-		const result = buildCursorPrompt(ctx, { maxInputTokens: 1500, charsPerToken: 1 });
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 2200, charsPerToken: 1 });
 
 		expect(result.text).toContain("User: latest request");
 		expect(result.text).toContain("User: recent request");
@@ -360,7 +360,7 @@ describe("buildCursorPrompt", () => {
 			],
 		};
 
-		const result = buildCursorPrompt(ctx, { maxInputTokens: 1150, charsPerToken: 1 });
+		const result = buildCursorPrompt(ctx, { maxInputTokens: 1800, charsPerToken: 1 });
 
 		expect(result.text).toContain("User: latest request");
 		expect(result.text).toContain("User: recent request");
@@ -384,6 +384,10 @@ describe("buildCursorPrompt", () => {
 		const result = buildCursorPrompt(ctx);
 		expect(result.text.indexOf("Cursor SDK tool boundary:")).toBeLessThan(result.text.indexOf("System instructions from pi:"));
 		expect(result.text).toContain("Pi tool names, replay tool names, and transcript tool names are context only");
+		expect(result.text).toContain("pi__* names are live Cursor MCP bridge tool names only when exposed in the current run");
+		expect(result.text).toContain("Call the pi__* MCP tool name, not the real pi tool name shown in pi history or transcripts");
+		expect(result.text).toContain("Bridged calls execute through normal pi tool flow");
+		expect(result.text).toContain("Cursor-native host tools, settings, plugins, and configured MCP servers are separate from the pi bridge");
 		expect(result.text).toContain("do not claim access to pi-side tools from the system prompt");
 		expect(result.text).toContain("do not claim WebSearch/WebFetch unless Cursor executes them");
 		expect(result.text).not.toContain("do not use SwitchMode");
