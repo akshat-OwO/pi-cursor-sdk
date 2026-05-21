@@ -580,13 +580,25 @@ function collectCursorBridgeToolBatch(run: CursorLiveRun): CursorPiBridgeToolReq
 	return requests;
 }
 
+function isCursorTextBoundary(text: string, index: number): boolean {
+	if (index <= 0 || index >= text.length) return true;
+	const before = text[index - 1];
+	const after = text[index];
+	return !/[\p{L}\p{N}_]/u.test(before) || !/[\p{L}\p{N}_]/u.test(after);
+}
+
 function trimAlreadyEmittedCursorText(text: string, emittedText: string): string {
 	if (!text || !emittedText) return text;
 	if (text === emittedText) return "";
-	if (text.startsWith(emittedText)) return text.slice(emittedText.length);
-	if (emittedText.endsWith(text)) return "";
-	if (text.trim() === emittedText.trim()) return "";
-	if (emittedText.trim().endsWith(text.trim())) return "";
+	if (text.startsWith(emittedText) && isCursorTextBoundary(text, emittedText.length)) return text.slice(emittedText.length);
+	if (emittedText.endsWith(text) && isCursorTextBoundary(emittedText, emittedText.length - text.length)) return "";
+	const trimmedText = text.trim();
+	const trimmedEmittedText = emittedText.trim();
+	if (trimmedText === trimmedEmittedText) return "";
+	if (trimmedText && trimmedEmittedText.endsWith(trimmedText)) {
+		const suffixStart = trimmedEmittedText.length - trimmedText.length;
+		if (isCursorTextBoundary(trimmedEmittedText, suffixStart)) return "";
+	}
 	return text;
 }
 

@@ -3295,6 +3295,85 @@ describe("streamCursor", () => {
 		}
 	});
 
+	it("does not trim final text when pre-tool text is only a word prefix", async () => {
+		process.env.PI_CURSOR_EXPOSE_BUILTIN_TOOLS = "1";
+		registerBridgeForProviderTest({
+			active: ["read"],
+			tools: [createBuiltinToolInfo("read", Type.Object({ path: Type.String() }), "Read files")],
+		});
+
+		let onDelta: ((args: { update: any }) => void) | undefined;
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: (a: unknown) => void }) => {
+			onDelta = opts.onDelta as (args: { update: any }) => void;
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "running",
+				wait: runWait,
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			agentId: "agent-1",
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const firstEventsPromise = collectEvents(streamCursor(makeModel("composer-2"), makeContext(), { apiKey: "test-key" }));
+		await vi.waitFor(() => expect(mockSend).toHaveBeenCalled());
+		const createOptions = mockedCreate.mock.calls[0]?.[0] as any;
+		const { client, transport } = await connectMcpClient(createOptions.mcpServers.pi_tools.url);
+		try {
+			onDelta?.({ update: { type: "text-delta", text: "Disconnect" } });
+			const readCallPromise = client.callTool({ name: "pi__read", arguments: { path: "README.md" } });
+			const firstEvents = await firstEventsPromise;
+			const firstText = firstEvents.filter((event: any) => event.type === "text_delta").map((event: any) => event.delta).join("");
+			const firstDone = firstEvents.find((event: any) => event.type === "done") as any;
+			const [toolCall] = firstDone.message.content.filter((block: any) => block.type === "toolCall");
+
+			expect(firstText).toBe("Disconnect");
+			expect(toolCall.name).toBe("read");
+
+			const replayContext = makeContext();
+			replayContext.messages = [
+				...replayContext.messages,
+				firstDone.message,
+				{
+					role: "toolResult",
+					toolCallId: toolCall.id,
+					toolName: "read",
+					content: [{ type: "text", text: "file contents" }],
+					isError: false,
+					timestamp: 2,
+				},
+			];
+
+			const finalEventsPromise = collectEvents(streamCursor(makeModel("composer-2"), replayContext, { apiKey: "test-key" }));
+			await expect(readCallPromise).resolves.toMatchObject({ content: [{ type: "text", text: "file contents" }] });
+			resolveRun({ id: "run-1", status: "finished", result: "Disconnecting the CDP session per your choice." });
+			const finalEvents = await finalEventsPromise;
+			const finalText = finalEvents.filter((event: any) => event.type === "text_delta").map((event: any) => event.delta).join("");
+			const finalDone = finalEvents.find((event: any) => event.type === "done") as any;
+
+			expect(mockedCreate).toHaveBeenCalledTimes(1);
+			expect(runWait).toHaveBeenCalledTimes(1);
+			expect(finalText).toBe("Disconnecting the CDP session per your choice.");
+			expect(finalDone.message.content).toEqual([{ type: "text", text: "Disconnecting the CDP session per your choice." }]);
+		} finally {
+			await client.close().catch(() => undefined);
+			await transport.close().catch(() => undefined);
+		}
+	});
+
 	it("keeps non-bridge Cursor MCP replay visible while suppressing only bridge MCP calls", async () => {
 		registerBridgeForProviderTest({
 			active: ["read"],
