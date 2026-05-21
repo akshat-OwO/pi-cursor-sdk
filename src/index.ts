@@ -2,6 +2,8 @@ import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendi
 import { discoverModels, type CursorModelFallbackIssue } from "./model-discovery.js";
 import { registerCursorFastControls } from "./cursor-state.js";
 import { registerCursorNativeToolDisplay } from "./cursor-native-tool-display.js";
+import { registerCursorPiToolBridge } from "./cursor-pi-tool-bridge.js";
+import { registerCursorQuestionTool } from "./cursor-question-tool.js";
 import { registerCursorSessionCwd } from "./cursor-session-cwd.js";
 import { streamCursor } from "./cursor-provider.js";
 
@@ -25,6 +27,8 @@ export default async function (pi: ExtensionAPI) {
 	registerCursorSessionCwd(pi);
 	registerCursorFastControls(pi);
 	registerCursorNativeToolDisplay(pi);
+	registerCursorQuestionTool(pi);
+	registerCursorPiToolBridge(pi);
 	let fallbackIssue: CursorModelFallbackIssue | undefined;
 	const models = await discoverModels({
 		onFallback: (issue) => {

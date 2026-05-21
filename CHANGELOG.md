@@ -2,17 +2,33 @@
 
 ## Unreleased
 
+## 0.1.15 - 2026-05-21
+
 ### Added
 
-- Replay Cursor SDK `grep` activity through native pi `grep` cards and `glob` activity through native pi `bash` cards with synthesized command labels, so search activity matches built-in tool UX in interactive TTY sessions.
+- Add the default-on local pi MCP tool bridge, which exposes bridgeable active pi tools to local Cursor agents while executing calls through pi's normal tool path.
+- Add `cursor_ask_question` through the bridge so Cursor can ask users through pi UI as `pi__cursor_ask_question`.
+- Add `PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1` for opting in to overlapping built-in pi tools that are hidden from the Cursor bridge by default.
+- Add Cursor SDK MCP tool-call timeout overrides via `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` and `PI_CURSOR_MCP_TOOL_TIMEOUT_MS` for long-running local MCP tools, including bridged pi tools.
+- Replay Cursor SDK `grep` activity through native pi `grep` cards and `glob` activity through native pi `find` cards, so search activity matches built-in tool UX in interactive TTY sessions.
+
+### Changed
+
+- Load Cursor setting sources with `PI_CURSOR_SETTING_SOURCES=all` by default while filtering direct Cursor SDK startup logs so settings, rules, plugins, and configured Cursor MCP servers are available without corrupting pi's TUI.
 
 ### Fixed
 
+- Replay recorded Cursor tool errors, including nonzero shell exits and timeout-backgrounded shell commands, as native pi tool errors instead of successful green cards.
 - Format zero-match Cursor grep results as `(no matches)` instead of raw `{ "totalMatches": 0 }` JSON in native replay and transcript output.
 - Strip trailing colons from Cursor grep file-list replay output.
 - Make native Cursor read replay closer to pi's built-in read cards by displaying session-relative paths and 20-line continuation hints.
 - Convert Cursor SDK shell timeouts from milliseconds to seconds in native bash replay cards instead of rendering `30000ms` as `30000s`.
 - Use the pi session cwd for Cursor `Agent.create`, not only native tool replay display. Completes the 0.1.10 cwd work that previously updated replay registration but left the Cursor agent runtime on `process.cwd()`.
+- Replay path-only Cursor `write` activity through neutral recorded Cursor activity instead of invalid native pi `write` calls.
+- Preserve literal `cursor_edit`, `cursor_write`, and `cursor_mcp` text in user messages, assistant text, tool args, and tool results while still relabeling structured replay tool names.
+- Avoid hiding unrelated MCP activity whose result payload merely contains a bridge tool name, while still suppressing real bridge-owned Cursor MCP replay by invocation identity and call ID.
+- Clean up pending native replay waits when abort signals are already aborted or abort before listener registration.
+- Suppress direct Cursor SDK settings/skills startup noise, including late `managed_skills.removed` lines, without swallowing unrelated non-startup stdout/stderr output.
 
 ## 0.1.14 - 2026-05-18
 

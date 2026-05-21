@@ -1,6 +1,6 @@
 {
 	"name": "pi-cursor-sdk",
-	"version": "0.1.14",
+	"version": "0.1.15",
 	"description": "pi provider extension backed by @cursor/sdk local agents",
 	"author": "Mitch Fultz (https://github.com/fitchmultz)",
 	"license": "MIT",
@@ -26,6 +26,8 @@
 		"scripts/refresh-cursor-model-snapshots.mjs",
 		"README.md",
 		"docs/cursor-model-ux-spec.md",
+		"docs/cursor-native-tool-replay.md",
+		"docs/cursor-native-tool-visual-audit.md",
 		"LICENSE",
 		"CHANGELOG.md"
 	],
@@ -40,7 +42,8 @@
 		"refresh:cursor-snapshots": "node scripts/refresh-cursor-model-snapshots.mjs"
 	},
 	"dependencies": {
-		"@cursor/sdk": "^1.0.13"
+		"@cursor/sdk": "^1.0.13",
+		"@modelcontextprotocol/sdk": "^1.29.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
