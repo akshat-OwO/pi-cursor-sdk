@@ -556,6 +556,18 @@ describe("buildCursorSendPrompt", () => {
 		expect(incremental.text).toContain("Continue the conversation using Cursor SDK capabilities only");
 	});
 
+	it("preserves the latest user request in incremental prompts under budget pressure", () => {
+		const incremental = buildCursorIncrementalPrompt(
+			{
+				systemPrompt: "Long pi system prompt. ".repeat(20),
+				messages: [{ role: "user", content: "Keep this exact follow-up request", timestamp: 3 }],
+			},
+			{ maxInputTokens: 80, charsPerToken: 1 },
+		);
+
+		expect(incremental.text).toContain("User: Keep this exact follow-up request");
+	});
+
 	it("includes branch summaries from /tree navigation in bootstrap prompts", () => {
 		const context: Context = {
 			messages: [

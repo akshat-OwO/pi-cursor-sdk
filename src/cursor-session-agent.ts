@@ -338,7 +338,11 @@ export function registerCursorSessionAgent(_pi: CursorSessionAgentExtensionApi):
 	onCursorSessionScopeKeyChange((previousScopeKey) => {
 		void disposePoolEntryForScope(previousScopeKey, { terminal: true });
 	});
-	_pi.on("session_shutdown", async () => {
+	_pi.on("session_shutdown", async (event) => {
+		if (event.reason === "reload") {
+			await resetSessionCursorAgent();
+			return;
+		}
 		await disposeSessionCursorAgent();
 	});
 	_pi.on("session_compact", () => {

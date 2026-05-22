@@ -310,30 +310,22 @@ export function buildCursorIncrementalPrompt(context: Context, options: CursorPr
 	const latestUserMessageIndex = getLatestUserMessageIndex(messages);
 	const latestUserMessage = latestUserMessageIndex >= 0 ? messages[latestUserMessageIndex] : undefined;
 	const latestUserText = latestUserMessage ? formatMessage(latestUserMessage) : undefined;
-	const sections = [
+	const sectionsBeforeMessages = [
 		"Continue the conversation using Cursor SDK capabilities only. Do not list, promise, or call pi-only tools from earlier context as if they were available.",
 	];
 	if (context.systemPrompt) {
-		sections.push(`System instructions from pi:\n${sanitizeSystemPromptForCursor(context.systemPrompt)}`);
+		sectionsBeforeMessages.push(`System instructions from pi:\n${sanitizeSystemPromptForCursor(context.systemPrompt)}`);
 	}
-	if (latestUserText) sections.push(latestUserText);
+	const latestUserMessageSections =
+		latestUserText && latestUserMessageIndex >= 0 ? [{ index: latestUserMessageIndex, text: latestUserText }] : [];
 	const images = extractLatestImages(messages);
 	const imageTokenReserve = images.length * (options.imageTokenEstimate ?? 0);
 	const budgetOptions =
 		options.maxInputTokens === undefined
 			? options
 			: { ...options, maxInputTokens: Math.max(1, options.maxInputTokens - imageTokenReserve) };
-	const maxInputTokens = budgetOptions.maxInputTokens;
-	if (maxInputTokens !== undefined && Number.isFinite(maxInputTokens) && maxInputTokens > 0) {
-		const charsPerToken = budgetOptions.charsPerToken ?? CURSOR_APPROX_CHARS_PER_TOKEN;
-		const maxChars = Math.max(1, Math.floor(maxInputTokens * charsPerToken));
-		let text = sections.join(SECTION_SEPARATOR);
-		if (text.length > maxChars) {
-			text = `${text.slice(0, Math.max(0, maxChars - 1))}…`;
-		}
-		return { text, images };
-	}
-	return { text: sections.join(SECTION_SEPARATOR), images };
+	const parts = applyPromptBudget(sectionsBeforeMessages, latestUserMessageSections, [], latestUserMessageIndex, budgetOptions);
+	return { text: parts.join(SECTION_SEPARATOR), images };
 }
 
 export function buildCursorSendPrompt(

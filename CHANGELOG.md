@@ -2,14 +2,32 @@
 
 ## Unreleased
 
+## 0.1.16 - 2026-05-22
+
 ### Added
 
-- Add a manual Cursor live smoke checklist for release validation with real `pi -e . --cursor-no-fast --model cursor/composer-2.5` runs, diagnostics safety scans, TUI observation, bridge/replay checks, abort/cancel coverage, and an assume-everything-is-in-scope no-optional/no-deferred release rule.
+- Reuse Cursor SDK agents within the same pi session when model, API key, cwd, bridge surface, and pi context remain compatible, sending incremental follow-up prompts instead of re-bootstrapping full history on every turn.
+- Add context fingerprinting to choose bootstrap vs incremental `Agent.send()` prompts, including branch and compaction summary detection after `/tree` navigation and session compaction.
+- Add a manual [Cursor live smoke checklist](docs/cursor-live-smoke-checklist.md) for release validation with real `pi -e . --cursor-no-fast --model cursor/composer-2.5` runs, diagnostics safety scans, TUI observation, bridge/replay checks, abort/cancel coverage, and an assume-everything-is-in-scope no-optional/no-deferred release rule.
+- Share the Cursor pi bridge contract through provider prompts and bridged MCP tool descriptions via `src/cursor-bridge-contract.ts`.
+- Isolate Cursor usage and live-run accounting in `src/cursor-usage-accounting.ts` and `src/cursor-live-run-accounting.ts`.
+
+### Changed
+
+- Clarify the Cursor provider tool contract in README and replay docs: separate Cursor-native surface, pi bridge surface, and display-only replay.
+- Document bridge debug diagnostics (`PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1`) and the scrubbed JSONL allowlist behavior.
+- Refresh Cursor fast footer status on `turn_start` and treat models with the `cursor-sdk` API as Cursor models for status updates.
 
 ### Fixed
 
 - Harden Cursor pi tool bridge diagnostics so debug JSONL uses run-safe IDs separate from tokenized loopback routes and an allowlisted serializer that omits endpoint path material, raw args/results, and secrets.
-- Improve Cursor SDK token accounting for `/session` and compaction by keeping raw Cursor internal usage diagnostic-only, counting split-run tool-call activity/tool-result consumption in approximate pi session usage, using `usage.totalTokens` for the replayable Cursor prompt/context estimate, and isolating usage/live-run accounting in focused helpers.
+- Improve Cursor SDK token accounting for `/session` and compaction by keeping raw Cursor internal usage diagnostic-only, counting split-run tool-call activity/tool-result consumption in approximate pi session usage, using `usage.totalTokens` for the replayable Cursor prompt/context estimate, and sharing the same matched tool-result boundary between provider usage and bridge result resolution.
+- Fix duplicated final assistant text when Cursor streams partial post-tool text that prefixes the eventual final answer.
+- Preserve the latest user request in budgeted incremental Cursor session-agent prompts.
+- Invalidate and recreate session agents on compaction, API key changes, send errors, session shutdown, and `/tree` navigation so reused agents stay aligned with the active branch.
+- Treat `/reload` session shutdown as non-terminal for the session-agent pool so the same session can acquire a fresh Cursor SDK agent after reload.
+- Bootstrap prompts now include branch summaries after `/tree` navigation.
+- Harden Cursor pi tool bridge validation and contract boundaries.
 
 ## 0.1.15 - 2026-05-21
 

@@ -214,15 +214,15 @@ describe("cursor-session-agent", () => {
 		expect(mockDispose).toHaveBeenCalledTimes(1);
 	});
 
-	it("disposes the scoped session agent on session_shutdown", async () => {
+	it("disposes the scoped session agent on terminal session_shutdown", async () => {
 		const mockDispose = vi.fn().mockResolvedValue(undefined);
 		const createAgent = vi.fn().mockResolvedValue({
 			agentId: "agent-1",
 			[Symbol.asyncDispose]: mockDispose,
 		});
-		const sessionShutdownHandlers: Array<() => Promise<void> | void> = [];
+		const sessionShutdownHandlers: Array<(event: { reason: "quit" | "reload" }) => Promise<void> | void> = [];
 		const pi = {
-			on: vi.fn((event: string, handler: () => Promise<void> | void) => {
+			on: vi.fn((event: string, handler: (event: { reason: "quit" | "reload" }) => Promise<void> | void) => {
 				if (event === "session_shutdown") sessionShutdownHandlers.push(handler);
 			}),
 		};
@@ -237,8 +237,39 @@ describe("cursor-session-agent", () => {
 		});
 
 		expect(sessionAgentTestUtils.sessionAgentsByScope.has("/tmp/sessions/test.jsonl")).toBe(true);
-		await sessionShutdownHandlers[0]?.();
+		await sessionShutdownHandlers[0]?.({ reason: "quit" });
 		expect(sessionAgentTestUtils.sessionAgentsByScope.has("/tmp/sessions/test.jsonl")).toBe(false);
+		expect(mockDispose).toHaveBeenCalledTimes(1);
+	});
+
+	it("allows reacquiring a session agent after reload session_shutdown", async () => {
+		const mockDispose = vi.fn().mockResolvedValue(undefined);
+		const createAgent = vi.fn().mockImplementation(async () => ({
+			agentId: `agent-${createAgent.mock.calls.length + 1}`,
+			[Symbol.asyncDispose]: mockDispose,
+		}));
+		const sessionShutdownHandlers: Array<(event: { reason: "quit" | "reload" }) => Promise<void> | void> = [];
+		const pi = {
+			on: vi.fn((event: string, handler: (event: { reason: "quit" | "reload" }) => Promise<void> | void) => {
+				if (event === "session_shutdown") sessionShutdownHandlers.push(handler);
+			}),
+		};
+
+		registerCursorSessionAgent(pi);
+		cursorSessionScopeTestUtils.set("/tmp/project", "/tmp/sessions/test.jsonl");
+		const params = {
+			apiKey: "test-key",
+			cwd: "/tmp/project",
+			modelSelection: { id: "composer-2.5" },
+			createAgent,
+		};
+		const first = await acquireSessionCursorAgent(params);
+
+		await sessionShutdownHandlers[0]?.({ reason: "reload" });
+		const second = await acquireSessionCursorAgent(params);
+
+		expect(first.agent).not.toBe(second.agent);
+		expect(createAgent).toHaveBeenCalledTimes(2);
 		expect(mockDispose).toHaveBeenCalledTimes(1);
 	});
 
