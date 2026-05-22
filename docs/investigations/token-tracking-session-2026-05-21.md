@@ -4,12 +4,12 @@
 
 The supplied session's persisted assistant `usage` fields sum exactly to `/session` totals: 3,086 input, 319 output, 3,405 total. The problem is not JSONL loss or `/session` math; it is an accounting-contract gap in `pi-cursor-sdk`: split Cursor SDK live runs persist narrow text/prompt estimates, leaving tool-call/thinking/tool-result-heavy turns undercounted and often all-zero.
 
-Implementation follow-up completed in this working tree: raw Cursor SDK `turn-ended.usage` remains diagnostic-only, while the provider now uses dual estimates: `usage.input/output` as approximate session activity, and `usage.totalTokens` as the context-safe replayable Cursor prompt estimate derived from `buildCursorPrompt()`.
+Implementation follow-up completed in this working tree: raw Cursor SDK `turn-ended.usage` remains diagnostic-only, while the provider now uses dual estimates: `usage.input/output` as approximate session activity, and `usage.totalTokens` as the context-safe replayable Cursor prompt estimate derived from `buildCursorPrompt()`. The final implementation isolates the policy in `src/cursor-usage-accounting.ts` and consumes matching split-run tool results through `src/cursor-live-run-accounting.ts` so usage input and bridge MCP result resolution share one deduped boundary.
 
 ## Symptoms
 
-- Supplied session file: `/Users/mitchfultz/.pi/agent/sessions/--Users-mitchfultz-Projects-AI-demo--/2026-05-22T00-20-18-451Z_019e4d0d-eb93-7074-929c-6deb469c1eaf.jsonl`.
-- Session ID: `019e4d0d-eb93-7074-929c-6deb469c1eaf`.
+- Supplied session file: `<local pi session JSONL>`.
+- Session ID: `<redacted session id>`.
 - `/session` reported: User 1, Assistant 41, Tool Calls 40, Tool Results 40, Total 82.
 - `/session` reported tokens: Input 3,086; Output 319; Total 3,405.
 - Local inspection found 87 JSONL records, including 84 `message` records plus session/model/thinking metadata.
@@ -98,10 +98,10 @@ Relevant code paths in `src/cursor-provider.ts`:
 - Non-live runs call `setApproximateUsage(partial, promptInputTokens, finalText)` once (`src/cursor-provider.ts:1298-1306`).
 - The provider explicitly ignores Cursor SDK `turn-ended.usage` because it reports cumulative internal agent/tool/cache work, not replayable pi prompt context (`src/cursor-provider.ts:1198-1201`).
 
-Tests and docs lock this behavior today:
+At investigation time, tests and docs locked this pre-fix behavior; the implementation follow-up above supersedes the later-turn zero-input expectation:
 
-- `test/cursor-provider.test.ts:2758-2795`, test name `uses pi prompt/output estimates instead of Cursor cumulative internal usage`, injects huge `turn-ended.usage` values (`inputTokens: 6746960`, `outputTokens: 17701`, `cacheReadTokens: 6559232`) and asserts pi usage remains small and cache fields stay zero.
-- `test/cursor-provider.test.ts:2408-2510`, test name `does not duplicate final result after an earlier post-tool text turn`, asserts the split live run calls `runWait` once, the first assistant turn has input > 0, and later split turns have `usage.input === 0` (`test/cursor-provider.test.ts:2504-2507`).
+- `test/cursor-provider.test.ts:2758-2795`, test name `uses pi prompt/output estimates instead of Cursor cumulative internal usage`, injected huge `turn-ended.usage` values (`inputTokens: 6746960`, `outputTokens: 17701`, `cacheReadTokens: 6559232`) and asserted pi usage remained small and cache fields stayed zero.
+- `test/cursor-provider.test.ts:2408-2510`, test name `does not duplicate final result after an earlier post-tool text turn`, asserted the split live run called `runWait` once, the first assistant turn counted prompt input, and later split turns did not count newly consumed tool results as input.
 - `docs/cursor-model-ux-spec.md:32` states Cursor SDK usage is cumulative internal work, the extension reports approximate prompt/output usage, and split replay turns count prompt input once.
 - `README.md:246-250` documents live Cursor run state spanning tool-use turns and approximate pi token usage.
 - `CHANGELOG.md:126` records that raw Cursor cumulative usage was stopped to prevent false context-overflow and compaction triggers.
@@ -219,7 +219,7 @@ Recommended split under the current pi schema:
 
 Near-term extension changes, all in this repo:
 
-1. **Split usage estimation in `src/cursor-provider.ts`.** Replace `setApproximateUsage(partial, promptInputTokens, outputText)` (`src/cursor-provider.ts:279-284`) with a helper that writes:
+1. **Split usage estimation into `src/cursor-usage-accounting.ts`.** Replace provider-local usage math with a focused helper that writes:
    - `usage.input`: incremental session input estimate for this assistant record.
    - `usage.output`: incremental session output estimate for this assistant record.
    - `usage.cacheRead/cacheWrite`: 0 unless a safe Cursor contract appears.
@@ -227,11 +227,11 @@ Near-term extension changes, all in this repo:
 2. **Export or add a context-token estimator in `src/context.ts`.** Reuse `buildCursorPrompt()` so context estimates follow the actual Cursor prompt formatting and thinking omission (`src/context.ts:92-107`, `190-218`). Do not duplicate formatting rules.
 3. **Thread context into live replay usage setting.** `replayPendingCursorLiveRun()` and `emitCursorNativeRunNextTurn()` should be able to compute context tokens from current `context.messages + partial` before finalizing a split assistant record. Current replay path has the context at `replayPendingCursorLiveRun()` (`src/cursor-provider.ts:782-797`) but `emitCursorNativeRunNextTurn()` only receives `partial` and `run` (`src/cursor-provider.ts:723-780`).
 4. **Count assistant output more honestly.** For `/session` session-output estimate, include text and tool-call args at minimum. Consider thinking only if docs say `/session output` includes visible assistant trace, not only model final text. Keep thinking out of `usage.totalTokens` because Cursor prompt omits it.
-5. **Count consumed tool results as input with dedupe.** Extend `CursorLiveRun` with a `countedToolResultIds` set. When replaying a pending run, estimate newly observed `toolResult` messages by `toolCallId` and add them to the following assistant turn's `usage.input`; never double-count across replay calls.
+5. **Count consumed tool results as input with dedupe.** Keep live-run accounting state in `src/cursor-live-run-accounting.ts`. When replaying a pending run, consume newly observed matching `toolResult` messages by `toolCallId`, add them to the following assistant turn's `usage.input`, and pass the same consumed results to bridge MCP result resolution; never double-count across replay calls.
 6. **Keep Cursor SDK usage diagnostic-only.** If needed, add a `diagnostics` entry for raw and guarded delta Cursor SDK usage. The type supports arbitrary diagnostic details (`node_modules/@earendil-works/pi-ai/dist/utils/diagnostics.d.ts:7-12`). Do not use it in `message.usage` or compaction.
 7. **Update tests.** Add/adjust focused tests in `test/cursor-provider.test.ts`:
    - Huge `turn-ended.usage` remains ignored for persisted pi `input/output/cache` and `totalTokens` stays context-safe, not huge (`test/cursor-provider.test.ts:2758-2795`).
-   - Split live-run later turns keep `usage.input === 0` for actual prompt duplication avoidance but have meaningful `usage.totalTokens` for context/compaction (`test/cursor-provider.test.ts:2408-2510`).
+   - Split live-run later turns do not recount the original prompt, count newly consumed matching tool results as input, and have meaningful `usage.totalTokens` for context/compaction.
    - Tool-call-only and thinking+toolCall assistant turns no longer persist all-zero session activity if `/session` is meant to account visible assistant activity.
    - Tool-result input attribution, if implemented, is deduped by `toolCallId`.
 8. **Update docs.** `docs/cursor-model-ux-spec.md:32` and `README.md:250` should distinguish approximate session activity, context estimate, Cursor internal diagnostics, and non-billable status.
@@ -318,14 +318,14 @@ This is a real accounting-contract gap. Current docs/tests explain the old behav
 
 ## Recommendations
 
-1. **Implement provider-side dual estimates in `src/cursor-provider.ts`.** Replace `setApproximateUsage(partial, promptInputTokens, outputText)` with a helper that writes:
+1. **Implement dual estimates in `src/cursor-usage-accounting.ts`.** Use a focused helper that writes:
    - `usage.input`: incremental approximate session input for this assistant record.
    - `usage.output`: approximate assistant-visible output for this assistant record, including text, thinking, and tool-call name/args.
    - `usage.cacheRead/cacheWrite`: `0`.
    - `usage.totalTokens`: context-safe current replayable Cursor prompt estimate derived from `buildCursorPrompt(context + partial)`, allowed to differ from `input + output`.
 2. **Export/reuse token estimators from `src/context.ts`.** Keep one source of truth for prompt/context token estimation by deriving context totals from `buildCursorPrompt()` rather than duplicating transcript formatting. Thinking should remain excluded from context totals because `buildCursorPrompt()` omits thinking.
 3. **Thread context through live-run usage finalization.** `replayPendingCursorLiveRun()` / `emitCursorNativeRunNextTurn()` need enough context to compute `usage.totalTokens` after appending each split assistant turn.
-4. **Count consumed tool results as session input with dedupe.** Extend live-run state with a `countedToolResultIds` set and add newly consumed matching tool-result text/images to the following assistant turn's `usage.input`; do not double-count across replay calls.
+4. **Count consumed tool results as session input with dedupe.** Keep live-run state in `src/cursor-live-run-accounting.ts`, add newly consumed matching tool-result text/images to the following assistant turn's `usage.input`, and pass that same consumed result set to bridge MCP resolution; do not double-count across replay calls.
 5. **Keep raw Cursor SDK usage diagnostic-only.** Do not put raw or delta Cursor SDK `turn-ended.usage` into `message.usage` or compaction. Diagnostics can record scrubbed raw/delta values if useful, but must label them internal/non-billable.
 6. **Update tests in `test/cursor-provider.test.ts` and `test/context.test.ts`.** Cover: raw huge `turn-ended.usage` remains ignored; tool-call-only and thinking+toolCall turns have nonzero session output; later split turns do not recount the original prompt; tool-result input is deduped; final/empty split turns still have meaningful `usage.totalTokens`; `usage.totalTokens` may differ from `input + output`; context estimate includes tool calls/results, omits thinking, respects prompt budgeting, and reserves latest user-image tokens.
 7. **Update docs.** Align `README.md`, `docs/cursor-model-ux-spec.md`, `docs/cursor-native-tool-replay.md`, and `CHANGELOG.md` with the new contract: Cursor raw usage is internal/diagnostic, `input/output` are approximate session activity, and `totalTokens` is the context-safe replayable prompt estimate.
@@ -341,7 +341,7 @@ Rejected alternatives:
 ## Preventive Measures
 
 - Regression tests now assert key parts of the new token contract: raw huge Cursor SDK `turn-ended.usage` remains ignored, split live runs count consumed tool results without recounting the original prompt, visible tool-call and thinking+toolCall turns have nonzero output, empty final split turns retain context-safe `usage.totalTokens`, and `usage.totalTokens` can exceed `input + output` as the context estimate.
-- `buildCursorPrompt()` is now reused by exported context token estimators so prompt formatting, budgeting, image reserves, and token accounting stay aligned.
+- `buildCursorPrompt()` is now reused by `src/cursor-usage-accounting.ts` so prompt formatting, budgeting, image reserves, and token accounting stay aligned.
 - The existing huge Cursor SDK usage test remains in place to prevent accidental reintroduction of raw cumulative counters into pi usage or compaction.
 - Docs now distinguish approximate session activity, context estimate, and raw Cursor internal usage.
 - Tool-result image accounting is covered as prompt placeholder text, matching `buildCursorPrompt()`.

@@ -80,6 +80,7 @@ describe("buildCursorPrompt", () => {
 			messages: [
 				{
 					role: "assistant",
+					// @ts-expect-error Exercises defensive formatting for legacy runtime data from older pi transcripts.
 					content: "Legacy assistant text",
 					api: "cursor-sdk",
 					provider: "cursor",
@@ -87,7 +88,7 @@ describe("buildCursorPrompt", () => {
 					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 					stopReason: "stop",
 					timestamp: 2,
-				} as unknown as AssistantMessage,
+				},
 			],
 		};
 		const result = buildCursorPrompt(ctx);

@@ -15,7 +15,7 @@ The pi-cursor-sdk-specific feedback is valid, with scope cuts:
 ## Background
 
 - User scope decisions: runtime + docs are allowed; capability manifest is docs-only; no general desktop-automation recipe.
-- Smoke evidence shows real tool-boundary confusion: the Cursor agent first treated pi/browser tools as outside Cursor SDK boundaries, then used bridged `agent_browser` once exposed (`/Users/mitchfultz/.pi/agent/sessions/--Users-mitchfultz-Projects-AI-demo--/2026-05-21T19-27-13-078Z_019e4c01-96b6-777e-b443-7bab258351bf.jsonl:28-31`). It also recovered workflow steps from Cursor-side skills/prior transcripts rather than an in-repo bridge contract (`...jsonl:152-168`) and tried shell CLI introspection before using the bridged native tool (`...jsonl:259-264`).
+- Smoke evidence from a local redacted session shows real tool-boundary confusion: the Cursor agent first treated pi/browser tools as outside Cursor SDK boundaries, then used a bridged MCP tool after explicit prompting, but the transcript exposed both pi tool names and bridge MCP names in a confusing way.
 - Current user docs already explain the core bridge: Cursor SDK local tools/settings/plugins/MCP remain available; active bridgeable pi tools are exposed through loopback MCP; overlapping built-ins are hidden by default; bridged calls map back to real pi tool names; replay is separate and display-only (`README.md:201-239`).
 - `docs/cursor-native-tool-replay.md` is the clearest existing contract: two tool paths, replay is not execution, `pi__*` names are bridge MCP names, bridged calls queue real pi `toolCall`s and resolve matching `toolResult`s back into the same Cursor SDK run (`docs/cursor-native-tool-replay.md:1-24`).
 - `buildCursorPrompt()` already injects a static boundary section saying only Cursor SDK-exposed tools are callable; pi tool names, replay names, and transcript names are context only; replay is display-only (`src/context.ts:166-179`). The smoke test shows this text needs sharper `pi__*` guidance.
@@ -207,7 +207,7 @@ None blocking. The plan makes the diagnostics sink and flag canonical, keeps the
 
 ## References
 
-- Smoke session: `/Users/mitchfultz/.pi/agent/sessions/--Users-mitchfultz-Projects-AI-demo--/2026-05-21T19-27-13-078Z_019e4c01-96b6-777e-b443-7bab258351bf.jsonl`
+- Smoke session: `<local pi session JSONL>`
 - `README.md:201-239`, `README.md:293-319`
 - `docs/cursor-native-tool-replay.md:1-85`
 - `docs/cursor-model-ux-spec.md`

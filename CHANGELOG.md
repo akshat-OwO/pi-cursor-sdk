@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Add a manual Cursor live smoke checklist for release validation with real `pi -e . --cursor-no-fast --model cursor/composer-2.5` runs, diagnostics safety scans, TUI observation, bridge/replay checks, abort/cancel coverage, and an assume-everything-is-in-scope no-optional/no-deferred release rule.
+
 ### Fixed
 
-- Improve Cursor SDK token accounting for `/session` and compaction by keeping raw Cursor internal usage diagnostic-only, counting split-run tool-call activity/tool-result consumption in approximate pi session usage, and using `usage.totalTokens` for the replayable Cursor prompt/context estimate.
+- Harden Cursor pi tool bridge diagnostics so debug JSONL uses run-safe IDs separate from tokenized loopback routes and an allowlisted serializer that omits endpoint path material, raw args/results, and secrets.
+- Improve Cursor SDK token accounting for `/session` and compaction by keeping raw Cursor internal usage diagnostic-only, counting split-run tool-call activity/tool-result consumption in approximate pi session usage, using `usage.totalTokens` for the replayable Cursor prompt/context estimate, and isolating usage/live-run accounting in focused helpers.
 
 ## 0.1.15 - 2026-05-21
 

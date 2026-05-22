@@ -6,27 +6,29 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 	type AssistantMessage,
-	type Message,
 	type ToolResultMessage,
 } from "@earendil-works/pi-ai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Agent, createAgentPlatform } from "@cursor/sdk";
 import type { InteractionUpdate, SDKAgent, SettingSource } from "@cursor/sdk";
 import { installCursorMcpToolTimeoutOverride } from "./cursor-mcp-timeout-override.js";
-import {
-	buildCursorPrompt,
-	CURSOR_APPROX_CHARS_PER_TOKEN,
-	CURSOR_IMAGE_TOKEN_ESTIMATE,
-	estimateCursorContextTokens,
-	estimateCursorPromptMessageTokens,
-	estimateCursorPromptTokens,
-	estimateCursorTextTokens,
-} from "./context.js";
+import { buildCursorPrompt } from "./context.js";
 import {
 	getRegisteredCursorPiToolBridge,
 	type CursorPiBridgeToolRequest,
 	type CursorPiToolBridgeRun,
 } from "./cursor-pi-tool-bridge.js";
+import {
+	consumeCursorLiveToolResults,
+	createCursorLiveRunAccountingState,
+	takeCursorLiveTurnInputTokens,
+	type CursorLiveRunAccountingState,
+} from "./cursor-live-run-accounting.js";
+import {
+	applyCursorApproximateUsage,
+	estimateCursorPromptInputTokens,
+	getCursorPromptOptions,
+} from "./cursor-usage-accounting.js";
 import { getCursorSessionCwd } from "./cursor-session-cwd.js";
 import { getEffectiveFastForModelId } from "./cursor-state.js";
 import { buildCursorModelSelection } from "./model-discovery.js";
@@ -91,10 +93,7 @@ interface CursorLiveRun {
 	id: string;
 	agent: SDKAgent;
 	bridgeRun?: CursorPiToolBridgeRun;
-	promptInputTokens: number;
-	promptInputTokensReported: boolean;
-	pendingSessionInputTokens: number;
-	countedToolResultIds: Set<string>;
+	accounting: CursorLiveRunAccountingState;
 	pendingEvents: CursorLiveQueuedEvent[];
 	textDeltas: string[];
 	emittedText: string;
@@ -273,53 +272,6 @@ async function cacheSdkContextWindow(agentId: string, modelId: string): Promise<
 	}
 }
 
-function getPromptInputTokenBudget(model: Model<Api>): number {
-	const outputReserveTokens = Math.min(model.maxTokens, Math.max(1, Math.floor(model.contextWindow * 0.2)));
-	return Math.max(1, model.contextWindow - outputReserveTokens);
-}
-
-function getCursorPromptOptions(model: Model<Api>) {
-	return {
-		maxInputTokens: getPromptInputTokenBudget(model),
-		charsPerToken: CURSOR_APPROX_CHARS_PER_TOKEN,
-		imageTokenEstimate: CURSOR_IMAGE_TOKEN_ESTIMATE,
-	};
-}
-
-function stringifyUsageValue(value: unknown): string {
-	try {
-		return JSON.stringify(value) ?? "";
-	} catch {
-		return String(value);
-	}
-}
-
-function estimateAssistantActivityOutputTokens(message: AssistantMessage): number {
-	const parts = message.content
-		.map((block) => {
-			if (block.type === "text") return block.text;
-			if (block.type === "thinking") return block.thinking;
-			if (block.type === "toolCall") {
-				return `Tool call (${block.name}, call ${block.id}): ${stringifyUsageValue(block.arguments)}`;
-			}
-			return "";
-		})
-		.filter(Boolean);
-	return estimateCursorTextTokens(parts.join("\n"), { charsPerToken: CURSOR_APPROX_CHARS_PER_TOKEN });
-}
-
-function withAssistantMessage(context: Context, partial: AssistantMessage): Context {
-	return { ...context, messages: [...context.messages, partial] };
-}
-
-function setCursorApproximateUsage(partial: AssistantMessage, model: Model<Api>, context: Context, sessionInputTokens: number): void {
-	partial.usage.input = sessionInputTokens;
-	partial.usage.output = estimateAssistantActivityOutputTokens(partial);
-	partial.usage.cacheRead = 0;
-	partial.usage.cacheWrite = 0;
-	partial.usage.totalTokens = estimateCursorContextTokens(withAssistantMessage(context, partial), getCursorPromptOptions(model));
-}
-
 function sanitizeSingleLine(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
@@ -428,24 +380,16 @@ function getPendingCursorLiveRun(context: Context): CursorLiveRun | undefined {
 	return undefined;
 }
 
-function asToolResultMessage(message: Message): ToolResultMessage | undefined {
-	return message.role === "toolResult" ? message : undefined;
-}
-
 function isCursorLiveRunToolResult(run: CursorLiveRun, message: ToolResultMessage): boolean {
 	const replayId = getCursorNativeReplayIdFromToolCallId(message.toolCallId);
 	if (replayId) return replayId === run.id;
 	return run.bridgeRun?.hasPendingPiToolCallId(message.toolCallId) ?? false;
 }
 
-function accumulateCursorLiveToolResultInputTokens(run: CursorLiveRun, context: Context): void {
-	for (const message of context.messages) {
-		const toolResult = asToolResultMessage(message);
-		if (!toolResult || run.countedToolResultIds.has(toolResult.toolCallId)) continue;
-		if (!isCursorLiveRunToolResult(run, toolResult)) continue;
-		run.countedToolResultIds.add(toolResult.toolCallId);
-		run.pendingSessionInputTokens += estimateCursorPromptMessageTokens(toolResult, { charsPerToken: CURSOR_APPROX_CHARS_PER_TOKEN });
-	}
+function consumeCursorLiveRunToolResults(run: CursorLiveRun, context: Context) {
+	const consumed = consumeCursorLiveToolResults(run.accounting, context, (toolResult) => isCursorLiveRunToolResult(run, toolResult));
+	run.accounting = consumed.state;
+	return consumed;
 }
 
 function splitTextIntoReplayDeltas(text: string): string[] {
@@ -689,17 +633,11 @@ function selectCursorFinalText(
 	return "";
 }
 
-function takeCursorNativePromptInputTokens(run: CursorLiveRun): number {
+function takeCursorLiveSessionInputTokens(run: CursorLiveRun, toolResultInputTokens: number): number {
 	// Native replay can split one Cursor run into multiple pi turns; count prompt input once.
-	if (run.promptInputTokensReported) return 0;
-	run.promptInputTokensReported = true;
-	return run.promptInputTokens;
-}
-
-function takeCursorLiveSessionInputTokens(run: CursorLiveRun): number {
-	const tokens = takeCursorNativePromptInputTokens(run) + run.pendingSessionInputTokens;
-	run.pendingSessionInputTokens = 0;
-	return tokens;
+	const taken = takeCursorLiveTurnInputTokens(run.accounting, toolResultInputTokens);
+	run.accounting = taken.state;
+	return taken.sessionInputTokens;
 }
 
 function emitCursorNativeToolUseTurn(
@@ -708,6 +646,7 @@ function emitCursorNativeToolUseTurn(
 	model: Model<Api>,
 	context: Context,
 	run: CursorLiveRun,
+	toolResultInputTokens: number,
 	tools: CursorNativeToolDisplayItem[],
 ): void {
 	const shouldTerminate = run.done && !run.finalText?.trim() && run.pendingEvents.length === 0;
@@ -727,7 +666,7 @@ function emitCursorNativeToolUseTurn(
 			run.recordedToolDisplayIds.push(tool.id);
 		}
 	}
-	setCursorApproximateUsage(partial, model, context, takeCursorLiveSessionInputTokens(run));
+	applyCursorApproximateUsage(partial, model, context, takeCursorLiveSessionInputTokens(run, toolResultInputTokens));
 	partial.stopReason = "toolUse";
 	stream.push({ type: "done", reason: "toolUse", message: partial });
 	scheduleCursorNativeRunIdleDispose(run);
@@ -739,6 +678,7 @@ function emitCursorBridgeToolUseTurn(
 	model: Model<Api>,
 	context: Context,
 	run: CursorLiveRun,
+	toolResultInputTokens: number,
 	requests: CursorPiBridgeToolRequest[],
 ): void {
 	for (const request of requests) {
@@ -754,7 +694,7 @@ function emitCursorBridgeToolUseTurn(
 		const block = partial.content[contentIndex];
 		if (block.type === "toolCall") stream.push({ type: "toolcall_end", contentIndex, toolCall: block, partial });
 	}
-	setCursorApproximateUsage(partial, model, context, takeCursorLiveSessionInputTokens(run));
+	applyCursorApproximateUsage(partial, model, context, takeCursorLiveSessionInputTokens(run, toolResultInputTokens));
 	partial.stopReason = "toolUse";
 	stream.push({ type: "done", reason: "toolUse", message: partial });
 	scheduleCursorNativeRunIdleDispose(run);
@@ -787,6 +727,7 @@ async function emitCursorNativeRunNextTurn(
 	model: Model<Api>,
 	context: Context,
 	run: CursorLiveRun,
+	toolResultInputTokens: number,
 	signal?: AbortSignal,
 ): Promise<void> {
 	const turn: CursorLiveTurnState = {
@@ -805,7 +746,7 @@ async function emitCursorNativeRunNextTurn(
 				if (signal?.aborted) throw new CursorAbortError();
 				closeCursorNativeTurnBlocks(turn);
 				const tools = collectCursorNativeToolBatch(run);
-				emitCursorNativeToolUseTurn(stream, partial, model, context, run, tools);
+				emitCursorNativeToolUseTurn(stream, partial, model, context, run, toolResultInputTokens, tools);
 				return;
 			}
 			if (event.type === "bridge-tool") {
@@ -813,7 +754,7 @@ async function emitCursorNativeRunNextTurn(
 				if (signal?.aborted) throw new CursorAbortError();
 				closeCursorNativeTurnBlocks(turn);
 				const requests = collectCursorBridgeToolBatch(run);
-				emitCursorBridgeToolUseTurn(stream, partial, model, context, run, requests);
+				emitCursorBridgeToolUseTurn(stream, partial, model, context, run, toolResultInputTokens, requests);
 				return;
 			}
 			run.pendingEvents.shift();
@@ -839,7 +780,7 @@ async function emitCursorNativeRunNextTurn(
 			if (finalText) {
 				await emitTextDeltas(stream, partial, splitTextIntoReplayDeltas(finalText));
 			}
-			setCursorApproximateUsage(partial, model, context, takeCursorLiveSessionInputTokens(run));
+			applyCursorApproximateUsage(partial, model, context, takeCursorLiveSessionInputTokens(run, toolResultInputTokens));
 			partial.stopReason = "stop";
 			stream.push({ type: "done", reason: "stop", message: partial });
 			await disposeCursorNativeRun(run);
@@ -860,10 +801,10 @@ async function replayPendingCursorLiveRun(
 	const run = getPendingCursorLiveRun(context);
 	if (!run) return false;
 	clearCursorNativeRunIdleDispose(run);
-	accumulateCursorLiveToolResultInputTokens(run, context);
-	run.bridgeRun?.resolveToolResultsFromContext(context);
+	const consumed = consumeCursorLiveRunToolResults(run, context);
+	run.bridgeRun?.resolveToolResults(consumed.toolResults);
 	try {
-		await emitCursorNativeRunNextTurn(stream, partial, model, context, run, signal);
+		await emitCursorNativeRunNextTurn(stream, partial, model, context, run, consumed.toolResultInputTokens, signal);
 	} catch (error) {
 		if (error instanceof CursorAbortError) await disposeCursorNativeRun(run);
 		throw error;
@@ -946,7 +887,7 @@ export function streamCursor(
 
 			const promptOptions = getCursorPromptOptions(model);
 			const prompt = buildCursorPrompt(context, promptOptions);
-			const promptInputTokens = estimateCursorPromptTokens(prompt, promptOptions);
+			const promptInputTokens = estimateCursorPromptInputTokens(prompt, promptOptions);
 			let thinkingContentIndex = -1;
 			let activityTraceChars = 0;
 			let activityTraceTruncated = false;
@@ -962,10 +903,7 @@ export function streamCursor(
 						id: useNativeToolReplay ? nativeReplayId : bridgeRun!.id,
 						agent,
 						bridgeRun,
-						promptInputTokens,
-						promptInputTokensReported: false,
-						pendingSessionInputTokens: 0,
-						countedToolResultIds: new Set(),
+						accounting: createCursorLiveRunAccountingState(promptInputTokens),
 						pendingEvents: [],
 						textDeltas,
 						emittedText: "",
@@ -1344,7 +1282,7 @@ export function streamCursor(
 					await waitForCursorNativeRunProgress(liveRun, options?.signal);
 					await settleCursorLiveToolBatch(liveRun);
 					closeTraceBlock();
-					await emitCursorNativeRunNextTurn(stream, partial, model, context, liveRun, options?.signal);
+					await emitCursorNativeRunNextTurn(stream, partial, model, context, liveRun, 0, options?.signal);
 				} catch (error) {
 					if (error instanceof CursorAbortError) await disposeCursorNativeRun(liveRun);
 					throw error;
@@ -1369,7 +1307,7 @@ export function streamCursor(
 					allowPartialPrefix: true,
 				});
 				flushText(hasUsableText(finalCursorText) ? [finalCursorText] : []);
-				setCursorApproximateUsage(partial, model, context, promptInputTokens);
+				applyCursorApproximateUsage(partial, model, context, promptInputTokens);
 				stream.push({ type: "done", reason: "stop", message: partial });
 			}
 		} catch (error) {
