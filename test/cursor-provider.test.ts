@@ -815,6 +815,101 @@ describe("streamCursor", () => {
 		expect(replayDone.message.content).toEqual([{ type: "text", text: "Final answer only." }]);
 	});
 
+	it("resumes an active live run when a steering user message follows tool results", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		const registeredTools: RegisteredTool[] = [];
+		await registerNativeToolDisplayForTest(registeredTools);
+
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
+		let sendCallCount = 0;
+		const mockSend = vi.fn().mockImplementation(async (message: { text?: string }, opts: { onDelta: CursorDeltaHandler }) => {
+			sendCallCount += 1;
+			if (sendCallCount === 1) {
+				opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "bash", args: { command: "git status" } }, callId: "c1" } });
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "bash",
+							result: { status: "success", value: { stdout: "clean", stderr: "", exitCode: 0 } },
+						},
+						callId: "c1",
+					},
+				});
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "running",
+					wait: runWait,
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
+			}
+
+			return {
+				id: "run-2",
+				agentId: "agent-1",
+				status: "finished",
+				wait: vi.fn().mockResolvedValue({ id: "run-2", status: "finished", result: message.text ?? "" }),
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			agentId: "agent-1",
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const firstDone = getDoneEvent(firstEvents);
+		const toolCall = firstDone.message.content.find(isToolCallBlock);
+		expect(toolCall?.name).toBe("bash");
+		expect(firstDone.reason).toBe("toolUse");
+
+		const bashTool = registeredTools.find((tool) => tool.name === "bash");
+		const toolResult = await bashTool!.execute(toolCall!.id, toolCall!.arguments, undefined, undefined, {});
+
+		const steerContext = makeContext();
+		steerContext.messages = [
+			...steerContext.messages,
+			firstDone.message,
+			{
+				role: "toolResult",
+				toolCallId: toolCall!.id,
+				toolName: "bash",
+				content: toolResult.content,
+				details: toolResult.details,
+				isError: false,
+				timestamp: 2,
+			},
+			{ role: "user", content: "and push", timestamp: 3 },
+		];
+
+		const steerEventsPromise = collectEvents(streamCursor(makeModel(), steerContext, { apiKey: "test-key" }));
+		await vi.waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
+
+		resolveRun({ id: "run-1", status: "finished", result: "Would have kept going without steer." });
+
+		const steerEvents = await steerEventsPromise;
+		expect(steerEvents.some((event) => event.type === "error")).toBe(false);
+		expect(mockSend).toHaveBeenCalledTimes(2);
+		expect(mockedCreate).toHaveBeenCalledTimes(1);
+
+		const steerPrompt = mockSend.mock.calls[1]?.[0] as { text?: string };
+		expect(steerPrompt.text).toContain("User: and push");
+		const steerDone = getDoneEvent(steerEvents);
+		expect(steerDone.reason).toBe("stop");
+	});
+
 	it("uses Cursor shell-output-delta as display-only fallback when completed shell output is empty", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		const registeredTools: RegisteredTool[] = [];
