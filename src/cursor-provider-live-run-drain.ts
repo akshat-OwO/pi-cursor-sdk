@@ -21,28 +21,23 @@ import {
 import { type CursorPiBridgeToolRequest } from "./cursor-pi-tool-bridge.js";
 import { resetSessionCursorAgent } from "./cursor-session-agent.js";
 import { applyCursorApproximateUsage } from "./cursor-usage-accounting.js";
+import { CursorPartialContentEmitter } from "./cursor-partial-content-emitter.js";
+import { hasUsableText } from "./cursor-record-utils.js";
 
 export const DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS = 5 * 60 * 1000;
 const CURSOR_NATIVE_REPLAY_TOOL_ID_PATTERN = /^(cursor-replay-\d+-\d+)-tool-\d+$/;
 
 interface CursorLiveTurnState {
-	stream: AssistantMessageEventStream;
-	partial: AssistantMessage;
-	thinkingContentIndex: number;
-	textContentIndex: number;
+	emitter: CursorPartialContentEmitter;
 	emittedText: string;
 }
-
-let cursorNativeReplayCounter = 0;
 let cursorNativeReplayIdleDisposeMs = DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS;
 
 type CursorLiveRunDrainMode = "emit" | "chain_user_input";
 type CursorLiveRunDrainOutcome = "tool_use" | "stop" | "error" | "aborted" | "chain_user_input";
 type LiveRunPreSendOutcome = "stream_ended" | "continue_send";
 
-function hasUsableText(value: string | undefined): value is string {
-	return typeof value === "string" && value.trim().length > 0;
-}
+let cursorNativeReplayCounter = 0;
 
 export async function abandonSessionCursorAgent(scopeKey: string | undefined): Promise<void> {
 	if (!scopeKey) return;
@@ -92,19 +87,12 @@ async function emitTextDeltas(
 	partial: AssistantMessage,
 	deltas: string[],
 ): Promise<string> {
-	if (deltas.length === 0) return "";
-	const contentIndex = partial.content.length;
-	partial.content.push({ type: "text", text: "" });
-	stream.push({ type: "text_start", contentIndex, partial });
-	const block = partial.content[contentIndex];
-	if (block.type !== "text") return "";
+	const emitter = new CursorPartialContentEmitter(stream, partial, -1, true);
 	for (const delta of deltas) {
-		block.text += delta;
-		stream.push({ type: "text_delta", contentIndex, delta, partial });
+		emitter.appendTextDelta(delta);
 		await Promise.resolve();
 	}
-	stream.push({ type: "text_end", contentIndex, content: block.text, partial });
-	return block.text;
+	return emitter.closeText();
 }
 
 export async function settleCursorLiveToolBatch(run: CursorLiveRun): Promise<void> {
@@ -113,79 +101,19 @@ export async function settleCursorLiveToolBatch(run: CursorLiveRun): Promise<voi
 	await scheduler.wait(75);
 }
 
-function closeCursorNativeThinkingBlock(turn: CursorLiveTurnState): void {
-	if (turn.thinkingContentIndex < 0) return;
-	const block = turn.partial.content[turn.thinkingContentIndex];
-	if (block.type === "thinking") {
-		turn.stream.push({
-			type: "thinking_end",
-			contentIndex: turn.thinkingContentIndex,
-			content: block.thinking,
-			partial: turn.partial,
-		});
-	}
-	turn.thinkingContentIndex = -1;
-}
-
-function closeCursorNativeTextBlock(turn: CursorLiveTurnState): string {
-	if (turn.textContentIndex < 0) return "";
-	const contentIndex = turn.textContentIndex;
-	const block = turn.partial.content[contentIndex];
-	turn.textContentIndex = -1;
-	if (block.type !== "text") return "";
-	turn.stream.push({
-		type: "text_end",
-		contentIndex,
-		content: block.text,
-		partial: turn.partial,
-	});
-	return block.text;
-}
-
-function closeCursorNativeTurnBlocks(turn: CursorLiveTurnState): string {
-	closeCursorNativeThinkingBlock(turn);
-	return closeCursorNativeTextBlock(turn);
-}
-
-function emitCursorNativeThinkingDelta(turn: CursorLiveTurnState, delta: string): void {
-	closeCursorNativeTextBlock(turn);
-	if (turn.thinkingContentIndex < 0) {
-		turn.thinkingContentIndex = turn.partial.content.length;
-		turn.partial.content.push({ type: "thinking", thinking: "" });
-		turn.stream.push({ type: "thinking_start", contentIndex: turn.thinkingContentIndex, partial: turn.partial });
-	}
-	const block = turn.partial.content[turn.thinkingContentIndex];
-	if (block.type !== "thinking") return;
-	block.thinking += delta;
-	turn.stream.push({ type: "thinking_delta", contentIndex: turn.thinkingContentIndex, delta, partial: turn.partial });
-}
-
-function emitCursorNativeTextDelta(turn: CursorLiveTurnState, delta: string): void {
-	closeCursorNativeThinkingBlock(turn);
-	if (turn.textContentIndex < 0) {
-		turn.textContentIndex = turn.partial.content.length;
-		turn.partial.content.push({ type: "text", text: "" });
-		turn.stream.push({ type: "text_start", contentIndex: turn.textContentIndex, partial: turn.partial });
-	}
-	const block = turn.partial.content[turn.textContentIndex];
-	if (block.type !== "text") return;
-	block.text += delta;
-	turn.stream.push({ type: "text_delta", contentIndex: turn.textContentIndex, delta, partial: turn.partial });
-}
-
 function emitCursorLiveQueuedEvent(
 	turn: CursorLiveTurnState,
 	event: Exclude<CursorLiveQueuedEvent, { type: "tool" } | { type: "bridge-tool" }>,
 	run?: CursorLiveRun,
 ): void {
 	if (event.type === "thinking-delta") {
-		emitCursorNativeThinkingDelta(turn, event.text);
+		turn.emitter.appendThinkingDelta(event.text);
 	} else if (event.type === "thinking-completed") {
-		closeCursorNativeThinkingBlock(turn);
+		turn.emitter.closeThinking();
 	} else if (event.type === "text-delta") {
 		turn.emittedText += event.text;
 		if (run) run.emittedText += event.text;
-		emitCursorNativeTextDelta(turn, event.text);
+		turn.emitter.appendTextDelta(event.text);
 	}
 }
 
@@ -335,10 +263,7 @@ export async function drainCursorLiveRunTurn(
 	options: { mode: CursorLiveRunDrainMode; signal?: AbortSignal },
 ): Promise<CursorLiveRunDrainOutcome> {
 	const turn: CursorLiveTurnState = {
-		stream,
-		partial,
-		thinkingContentIndex: -1,
-		textContentIndex: -1,
+		emitter: new CursorPartialContentEmitter(stream, partial, -1, true),
 		emittedText: "",
 	};
 
@@ -352,7 +277,7 @@ export async function drainCursorLiveRunTurn(
 				run,
 				toolResultInputTokens,
 				options.signal,
-				options.mode === "emit" ? () => closeCursorNativeTurnBlocks(turn) : undefined,
+				options.mode === "emit" ? () => turn.emitter.closeAll() : undefined,
 			);
 			if (toolUse) return toolUse;
 			const event = cursorLiveRuns.shiftEvent(run);
@@ -383,7 +308,7 @@ export async function drainCursorLiveRunTurn(
 				await cursorLiveRuns.release(run);
 				return "chain_user_input";
 			}
-			closeCursorNativeTurnBlocks(turn);
+			turn.emitter.closeAll();
 			const finalText = trimCurrentTurnAlreadyEmittedCursorText(run.finalText ?? run.textDeltas.join(""), turn.emittedText, run.emittedText);
 			if (finalText) {
 				await emitTextDeltas(stream, partial, splitTextIntoReplayDeltas(finalText));

@@ -3,27 +3,11 @@ import type { InteractionUpdate } from "@cursor/sdk";
 import type { CursorLiveRun } from "./cursor-live-run-coordinator.js";
 import { cursorLiveRuns } from "./cursor-provider-live-run-drain.js";
 import { canRenderCursorToolNatively } from "./cursor-native-tool-display.js";
+import { CursorPartialContentEmitter } from "./cursor-partial-content-emitter.js";
+import { asRecord, getField, hasUsableText } from "./cursor-record-utils.js";
+import { scrubPiToolDisplay, scrubSensitiveText } from "./cursor-sensitive-text.js";
 import { buildCursorPiToolDisplay, formatCursorToolTranscript, getCursorCreatePlanText, mergeCursorToolCalls } from "./cursor-tool-transcript.js";
-
-const CURSOR_ACTIVITY_TRACE_MAX_CHARS = 50000;
-
-function getObjectField(value: unknown, field: string): unknown {
-	if (!value || typeof value !== "object") return undefined;
-	return (value as Record<string, unknown>)[field];
-}
-
-function getCursorToolName(toolCall: unknown): string {
-	if (!toolCall || typeof toolCall !== "object") return "unknown";
-	const data = toolCall as Record<string, unknown>;
-	if (typeof data.name === "string") return data.name;
-	if (typeof data.type === "string") return data.type;
-	if (typeof data.toolName === "string") return data.toolName;
-	return "unknown";
-}
-
-function hasUsableText(value: string | undefined): value is string {
-	return typeof value === "string" && value.trim().length > 0;
-}
+import { getToolName } from "./cursor-transcript-utils.js";
 
 function sanitizeSingleLine(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
@@ -35,31 +19,7 @@ function truncateSingleLine(value: string, maxLength = 240): string {
 }
 
 function formatCursorToolName(toolCall: unknown): string {
-	return truncateSingleLine(getCursorToolName(toolCall), 80) || "unknown";
-}
-
-function scrubSensitiveText(text: string, apiKey?: string): string {
-	let scrubbed = text;
-	const trimmedKey = apiKey?.trim();
-	if (trimmedKey) {
-		scrubbed = scrubbed.replace(new RegExp(trimmedKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "[redacted]");
-	}
-	return scrubbed
-		.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-		.replace(/((?:^|[\s,{])cookie["']?\s*[:=]\s*["']?)[^\n]+/gi, "$1[redacted]")
-		.replace(
-			/((?:authorization|api[_-]?key|apiKey|token|session(?:[_-]?id)?)["']?\s*[:=]\s*["']?)[^"'\s,;}]+/gi,
-			"$1[redacted]",
-		);
-}
-
-function scrubDisplayValue(value: unknown, apiKey?: string): unknown {
-	if (typeof value === "string") return scrubSensitiveText(value, apiKey);
-	if (Array.isArray(value)) return value.map((entry) => scrubDisplayValue(entry, apiKey));
-	if (value && typeof value === "object") {
-		return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, scrubDisplayValue(entry, apiKey)]));
-	}
-	return value;
+	return truncateSingleLine(getToolName(toolCall), 80) || "unknown";
 }
 
 interface CursorShellOutputDelta {
@@ -73,17 +33,17 @@ interface CursorShellOutputDeltas {
 }
 
 function isCursorShellToolCall(toolCall: unknown): boolean {
-	const normalizedName = getCursorToolName(toolCall).replace(/\s+/g, " ").trim().toLowerCase();
+	const normalizedName = getToolName(toolCall).replace(/\s+/g, " ").trim().toLowerCase();
 	return normalizedName === "shell" || normalizedName === "run_terminal_cmd" || normalizedName === "terminal" || normalizedName === "bash";
 }
 
 function getCursorShellOutputDelta(update: InteractionUpdate): CursorShellOutputDelta | undefined {
 	if (update.type !== "shell-output-delta") return undefined;
-	const event = getObjectField(update, "event");
-	const eventCase = getObjectField(event, "case");
+	const event = getField(update, "event");
+	const eventCase = getField(event, "case");
 	if (eventCase !== "stdout" && eventCase !== "stderr") return undefined;
-	const value = getObjectField(event, "value");
-	const data = getObjectField(value, "data");
+	const value = getField(event, "value");
+	const data = getField(value, "data");
 	if (typeof data !== "string" || data.length === 0) return undefined;
 	return { stream: eventCase, data };
 }
@@ -94,15 +54,15 @@ function mergeShellOutputDeltasIntoCursorToolCall(toolCall: unknown, deltas: Cur
 	const stderr = deltas.stderr.join("");
 	if (!hasUsableText(stdout) && !hasUsableText(stderr)) return toolCall;
 
-	const toolRecord = toolCall && typeof toolCall === "object" && !Array.isArray(toolCall) ? (toolCall as Record<string, unknown>) : undefined;
-	const result = getObjectField(toolRecord, "result");
-	const resultRecord = result && typeof result === "object" && !Array.isArray(result) ? (result as Record<string, unknown>) : undefined;
+	const toolRecord = asRecord(toolCall);
+	const result = getField(toolRecord, "result");
+	const resultRecord = asRecord(result);
 	if (!toolRecord || !resultRecord || resultRecord.status !== "success") return toolCall;
 
-	const value = getObjectField(resultRecord, "value");
-	const valueRecord = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-	const completedStdout = getObjectField(valueRecord, "stdout");
-	const completedStderr = getObjectField(valueRecord, "stderr");
+	const value = getField(resultRecord, "value");
+	const valueRecord = asRecord(value);
+	const completedStdout = getField(valueRecord, "stdout");
+	const completedStderr = getField(valueRecord, "stderr");
 	if (hasUsableText(typeof completedStdout === "string" ? completedStdout : undefined)) return toolCall;
 	if (hasUsableText(typeof completedStderr === "string" ? completedStderr : undefined)) return toolCall;
 
@@ -150,11 +110,8 @@ export class CursorSdkTurnCoordinator {
 	readonly nativeReplayId: string;
 	readonly textDeltas: string[];
 
-	private thinkingContentIndex = -1;
-	private activityTraceChars = 0;
-	private activityTraceTruncated = false;
+	private readonly contentEmitter: CursorPartialContentEmitter;
 	private nativeToolDisplayCounter = 0;
-	private textContentIndex = -1;
 	private nativeToolReplayStarted = false;
 	private cursorPlanTextCandidate: string | undefined;
 	private readonly startedToolCalls = new Map<string, unknown>();
@@ -175,6 +132,7 @@ export class CursorSdkTurnCoordinator {
 		this.useNativeToolReplay = options.useNativeToolReplay;
 		this.nativeReplayId = options.nativeReplayId;
 		this.textDeltas = options.textDeltas;
+		this.contentEmitter = new CursorPartialContentEmitter(options.stream, options.partial, undefined, false);
 	}
 
 	get planTextCandidate(): string | undefined {
@@ -194,31 +152,11 @@ export class CursorSdkTurnCoordinator {
 	}
 
 	closeTraceBlock(): void {
-		if (this.thinkingContentIndex < 0) return;
-		const block = this.partial.content[this.thinkingContentIndex];
-		if (block.type === "thinking") {
-			this.stream.push({
-				type: "thinking_end",
-				contentIndex: this.thinkingContentIndex,
-				content: block.thinking,
-				partial: this.partial,
-			});
-		}
-		this.thinkingContentIndex = -1;
+		this.contentEmitter.closeThinking();
 	}
 
 	flushText(deltas: string[]): string {
-		for (const delta of deltas) this.appendLiveTextDelta(delta);
-		if (this.textContentIndex < 0) return "";
-		const block = this.partial.content[this.textContentIndex];
-		if (block.type !== "text") return "";
-		this.stream.push({
-			type: "text_end",
-			contentIndex: this.textContentIndex,
-			content: block.text,
-			partial: this.partial,
-		});
-		return block.text;
+		return this.contentEmitter.flushText(deltas);
 	}
 
 	handleDelta(update: InteractionUpdate): void {
@@ -227,7 +165,7 @@ export class CursorSdkTurnCoordinator {
 			if (this.liveRun) {
 				cursorLiveRuns.queueEvent(this.liveRun, { type: "text-delta", text: update.text });
 			} else {
-				this.appendLiveTextDelta(update.text);
+				this.contentEmitter.appendTextDelta(update.text);
 			}
 			return;
 		}
@@ -235,7 +173,7 @@ export class CursorSdkTurnCoordinator {
 			if (this.liveRun) {
 				cursorLiveRuns.queueEvent(this.liveRun, { type: "thinking-delta", text: update.text });
 			} else {
-				this.appendTraceDelta(update.text);
+				this.contentEmitter.appendThinkingDelta(update.text);
 			}
 			return;
 		}
@@ -243,7 +181,7 @@ export class CursorSdkTurnCoordinator {
 			if (this.liveRun) {
 				cursorLiveRuns.queueEvent(this.liveRun, { type: "thinking-completed" });
 			} else {
-				this.closeTraceBlock();
+				this.contentEmitter.closeThinking();
 			}
 			return;
 		}
@@ -275,18 +213,18 @@ export class CursorSdkTurnCoordinator {
 			if (this.liveRun) {
 				cursorLiveRuns.queueEvent(this.liveRun, { type: "thinking-delta", text: summary });
 			} else {
-				this.appendTraceDelta(summary);
+				this.contentEmitter.appendThinkingDelta(summary);
 			}
 		}
 	}
 
 	handleStep(stepEnvelope: unknown): void {
-		const stepType = getObjectField(stepEnvelope, "type");
-		const step = getObjectField(stepEnvelope, "message") ? stepEnvelope : undefined;
-		const rawStepToolCall = getObjectField(step, "message");
+		const stepType = getField(stepEnvelope, "type");
+		const step = getField(stepEnvelope, "message") ? stepEnvelope : undefined;
+		const rawStepToolCall = getField(step, "message");
 		if (stepType !== "toolCall") return;
 		const toolCall = rawStepToolCall;
-		const stepId = getObjectField(stepEnvelope, "id") ?? getObjectField(toolCall, "id") ?? getObjectField(toolCall, "callId");
+		const stepId = getField(stepEnvelope, "id") ?? getField(toolCall, "id") ?? getField(toolCall, "callId");
 		if (!toolCall) return;
 
 		const resolution = this.resolveStepToolCompletion(toolCall, stepId);
@@ -378,71 +316,15 @@ export class CursorSdkTurnCoordinator {
 		if (route === "native_replay" && this.liveRun) {
 			this.nativeToolReplayStarted = true;
 			const id = `${this.nativeReplayId}-tool-${++this.nativeToolDisplayCounter}`;
+			const scrubbedDisplay = scrubPiToolDisplay(display, this.resolvedApiKey);
 			cursorLiveRuns.queueEvent(this.liveRun, {
 				type: "tool",
-				tool: {
-					...display,
-					id,
-					args: scrubDisplayValue(display.args, this.resolvedApiKey) as Record<string, unknown>,
-					result: scrubDisplayValue(display.result, this.resolvedApiKey) as typeof display.result,
-				},
+				tool: { ...scrubbedDisplay, id },
 			});
 			return;
 		}
 
 		this.emitCursorToolTrace(transcript || `Cursor tool: ${formatCursorToolName(toolCall)} completed`);
-	}
-
-	private appendLiveTextDelta(text: string): void {
-		if (this.textContentIndex < 0) {
-			this.textContentIndex = this.partial.content.length;
-			this.partial.content.push({ type: "text", text: "" });
-			this.stream.push({ type: "text_start", contentIndex: this.textContentIndex, partial: this.partial });
-		}
-		const block = this.partial.content[this.textContentIndex];
-		if (block.type !== "text") return;
-		block.text += text;
-		this.stream.push({
-			type: "text_delta",
-			contentIndex: this.textContentIndex,
-			delta: text,
-			partial: this.partial,
-		});
-	}
-
-	private appendTraceDelta(text: string): void {
-		if (this.activityTraceTruncated) return;
-
-		let delta = text;
-		if (this.activityTraceChars + delta.length > CURSOR_ACTIVITY_TRACE_MAX_CHARS) {
-			const remainingChars = Math.max(CURSOR_ACTIVITY_TRACE_MAX_CHARS - this.activityTraceChars, 0);
-			delta = `${delta.slice(0, remainingChars)}\n[Cursor activity trace truncated]\n`;
-			this.activityTraceTruncated = true;
-		}
-		if (!delta) return;
-
-		if (this.thinkingContentIndex < 0) {
-			this.thinkingContentIndex = this.partial.content.length;
-			this.partial.content.push({ type: "thinking", thinking: "" });
-			this.stream.push({ type: "thinking_start", contentIndex: this.thinkingContentIndex, partial: this.partial });
-		}
-		const block = this.partial.content[this.thinkingContentIndex];
-		if (block.type === "thinking") {
-			block.thinking += delta;
-			this.activityTraceChars += delta.length;
-			this.stream.push({
-				type: "thinking_delta",
-				contentIndex: this.thinkingContentIndex,
-				delta,
-				partial: this.partial,
-			});
-		}
-	}
-
-	private appendTraceBlock(text: string): void {
-		this.closeTraceBlock();
-		this.appendTraceDelta(text.endsWith("\n") ? text : `${text}\n`);
-		this.closeTraceBlock();
 	}
 
 	private emitCursorToolTrace(text: string): void {
@@ -452,7 +334,7 @@ export class CursorSdkTurnCoordinator {
 			cursorLiveRuns.queueEvent(this.liveRun, { type: "thinking-completed" });
 			return;
 		}
-		this.appendTraceBlock(traceText);
+		this.contentEmitter.appendThinkingBlock(traceText);
 	}
 
 	private getToolFingerprint(value: unknown): string {
@@ -464,7 +346,7 @@ export class CursorSdkTurnCoordinator {
 	}
 
 	private getStartedToolCallFingerprint(toolCall: unknown): string {
-		return this.getToolFingerprint({ toolName: getCursorToolName(toolCall), args: getObjectField(toolCall, "args") });
+		return this.getToolFingerprint({ toolName: getToolName(toolCall), args: getField(toolCall, "args") });
 	}
 
 	private clearStartedToolCall(callId: string): void {

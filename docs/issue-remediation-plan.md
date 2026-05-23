@@ -42,6 +42,12 @@ Split by ownership boundary (behavior-preserving moves):
 | `cursor-pi-tool-bridge.ts` (~1174) | main (~852) + `cursor-pi-tool-bridge-diagnostics.ts` + `cursor-pi-tool-bridge-mcp.ts` + `cursor-pi-tool-bridge-types.ts` + `cursor-record-utils.ts` |
 | `test/cursor-provider.test.ts` (~5151) | scenario-focused test files + `test/helpers/cursor-provider-harness.ts` (stream/bridge/replay splits, each ≤800 lines) |
 
+## Phase 2 follow-up (tracked as GitHub issues)
+
+- #23 — Split `cursor-pi-tool-bridge.ts` server from run orchestration
+- #24 — Decompose `cursor-native-tool-display.ts`
+- #25 — Unify tool completion resolution in `CursorSdkTurnCoordinator`
+
 ## Validation
 
 - `npm test`

@@ -78,24 +78,8 @@ const AUTH_CURSOR_SDK_ERROR_MESSAGE =
 	"Cursor SDK request failed because the API key may be invalid or unauthorized. Run /login -> Use an API key -> Cursor, verify CURSOR_API_KEY, or pass --api-key, then retry.";
 const CURSOR_SETTING_SOURCES_ENV = "PI_CURSOR_SETTING_SOURCES";
 
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function scrubSensitiveText(text: string, apiKey?: string): string {
-	let scrubbed = text;
-	const trimmedKey = apiKey?.trim();
-	if (trimmedKey) {
-		scrubbed = scrubbed.replace(new RegExp(escapeRegExp(trimmedKey), "g"), "[redacted]");
-	}
-	return scrubbed
-		.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-		.replace(/((?:^|[\s,{])cookie["']?\s*[:=]\s*["']?)[^\n]+/gi, "$1[redacted]")
-		.replace(
-			/((?:authorization|api[_-]?key|apiKey|token|session(?:[_-]?id)?)["']?\s*[:=]\s*["']?)[^"'\s,;}]+/gi,
-			"$1[redacted]",
-		);
-}
+import { scrubSensitiveText } from "./cursor-sensitive-text.js";
+import { hasUsableText } from "./cursor-record-utils.js";
 
 function isGenericErrorMessage(message: string): boolean {
 	const normalized = message.trim().toLowerCase();
@@ -143,10 +127,6 @@ async function cacheSdkContextWindow(agentId: string, modelId: string): Promise<
 	} catch {
 		// Context-window cache failures must not affect response streaming.
 	}
-}
-
-function hasUsableText(value: string | undefined): value is string {
-	return typeof value === "string" && value.trim().length > 0;
 }
 
 export function streamCursor(
