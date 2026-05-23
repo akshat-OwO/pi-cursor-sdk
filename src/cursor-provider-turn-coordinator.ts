@@ -195,7 +195,12 @@ export class CursorSdkTurnCoordinator {
 			return;
 		}
 		if (update.type === "tool-call-completed") {
-			const resolution = this.resolveDeltaToolCompletion(update);
+			const resolution = this.resolveToolCompletion({
+				source: "delta",
+				callId: update.callId,
+				toolCall: update.toolCall,
+				startedToolCall: this.startedToolCalls.get(update.callId),
+			});
 			if (resolution.action === "ignore-bridge") return;
 			this.handleCompletedToolCall(resolution.toolCall, {
 				identity: resolution.identity,
@@ -227,7 +232,11 @@ export class CursorSdkTurnCoordinator {
 		const stepId = getField(stepEnvelope, "id") ?? getField(toolCall, "id") ?? getField(toolCall, "callId");
 		if (!toolCall) return;
 
-		const resolution = this.resolveStepToolCompletion(toolCall, stepId);
+		const resolution = this.resolveToolCompletion({
+			source: "step",
+			callId: stepId,
+			toolCall,
+		});
 		if (resolution.action === "ignore-bridge") return;
 		this.handleCompletedToolCall(resolution.toolCall, {
 			identity: resolution.identity,
@@ -238,46 +247,53 @@ export class CursorSdkTurnCoordinator {
 		}
 	}
 
-	private resolveDeltaToolCompletion(update: Extract<InteractionUpdate, { type: "tool-call-completed" }>): ToolCompletionResolution {
-		const identity = typeof update.callId === "string" ? `cursor-tool:${update.callId}` : undefined;
-		const bridgeStartedCallId = this.takeBridgeStartedToolCallId(update.callId);
+	private resolveToolCompletion(options: {
+		source: "delta" | "step";
+		callId: unknown;
+		toolCall: unknown;
+		startedToolCall?: unknown;
+	}): ToolCompletionResolution {
+		const bridgeStartedCallId = this.takeBridgeStartedToolCallId(options.callId);
 		if (bridgeStartedCallId) {
 			this.completedToolIdentities.add(`cursor-tool:${bridgeStartedCallId}`);
 			return { action: "ignore-bridge", identity: `cursor-tool:${bridgeStartedCallId}` };
 		}
-		const mergedToolCall = mergeCursorToolCalls(this.startedToolCalls.get(update.callId), update.toolCall);
-		this.clearStartedToolCall(update.callId);
-		const toolCallWithShellOutput = mergeShellOutputDeltasIntoCursorToolCall(
-			mergedToolCall,
-			this.takeShellOutputDeltas(update.callId),
-		);
-		return {
-			action: "handle",
-			toolCall: toolCallWithShellOutput,
-			identity,
-			source: identity ? "started" : "fallback",
-		};
-	}
 
-	private resolveStepToolCompletion(toolCall: unknown, stepId: unknown): ToolCompletionResolution {
-		const bridgeStartedCallId = this.takeBridgeStartedToolCallId(stepId);
-		if (bridgeStartedCallId) {
-			this.completedToolIdentities.add(`cursor-tool:${bridgeStartedCallId}`);
-			return { action: "ignore-bridge", identity: `cursor-tool:${bridgeStartedCallId}` };
+		let matchedStartedCallId: string | undefined;
+		let resolvedToolCall = options.toolCall;
+
+		if (options.source === "delta") {
+			const callId = options.callId;
+			const identity = typeof callId === "string" ? `cursor-tool:${callId}` : undefined;
+			resolvedToolCall = mergeCursorToolCalls(options.startedToolCall, options.toolCall);
+			if (typeof callId === "string") {
+				this.clearStartedToolCall(callId);
+			}
+			const toolCallWithShellOutput = mergeShellOutputDeltasIntoCursorToolCall(
+				resolvedToolCall,
+				typeof callId === "string" ? this.takeShellOutputDeltas(callId) : undefined,
+			);
+			return {
+				action: "handle",
+				toolCall: toolCallWithShellOutput,
+				identity,
+				source: identity ? "started" : "fallback",
+			};
 		}
-		const matchedStartedCallId = this.removeStartedToolCallForStep(toolCall, stepId);
-		const toolCallWithShellOutput = mergeShellOutputDeltasIntoCursorToolCall(
-			toolCall,
+
+		matchedStartedCallId = this.removeStartedToolCallForStep(options.toolCall, options.callId);
+		resolvedToolCall = mergeShellOutputDeltasIntoCursorToolCall(
+			options.toolCall,
 			matchedStartedCallId ? this.takeShellOutputDeltas(matchedStartedCallId) : undefined,
 		);
-		if (this.liveRun?.bridgeRun?.isBridgeMcpToolCall(toolCall)) {
+		if (this.liveRun?.bridgeRun?.isBridgeMcpToolCall(resolvedToolCall)) {
 			if (matchedStartedCallId) this.completedToolIdentities.add(`cursor-tool:${matchedStartedCallId}`);
 			return { action: "ignore-bridge", identity: matchedStartedCallId ? `cursor-tool:${matchedStartedCallId}` : undefined };
 		}
-		const identityId = typeof stepId === "string" ? stepId : matchedStartedCallId;
+		const identityId = typeof options.callId === "string" ? options.callId : matchedStartedCallId;
 		return {
 			action: "handle",
-			toolCall: toolCallWithShellOutput,
+			toolCall: resolvedToolCall,
 			identity: identityId ? `cursor-tool:${identityId}` : undefined,
 			matchedStartedCallId,
 		};
