@@ -116,6 +116,19 @@ function makeContext(): Context {
 	};
 }
 
+function makeAssistantMessage(text = "Done", timestamp = 2): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "cursor-sdk",
+		provider: "cursor",
+		model: "test-model",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop",
+		timestamp,
+	};
+}
+
 async function collectEvents(stream: ReturnType<typeof streamCursor>): Promise<AssistantMessageEvent[]> {
 	const events: AssistantMessageEvent[] = [];
 	for await (const event of stream) {
@@ -337,6 +350,32 @@ describe("streamCursor", () => {
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 		mockedCreateAgentPlatform.mockResolvedValue(createMockAgentPlatform());
+	});
+
+	it("detects trailing user messages only after tool results", () => {
+		const base = makeContext();
+		const toolResult: Context["messages"][number] = {
+			role: "toolResult",
+			toolCallId: "call-1",
+			toolName: "bash",
+			content: [{ type: "text", text: "ok" }],
+			isError: false,
+			timestamp: 3,
+		};
+
+		expect(cursorProviderTestUtils.hasTrailingUserMessagesAfterToolResults(base)).toBe(false);
+		expect(
+			cursorProviderTestUtils.hasTrailingUserMessagesAfterToolResults({
+				...base,
+				messages: [...base.messages, makeAssistantMessage(), { role: "user", content: "follow up", timestamp: 4 }],
+			}),
+		).toBe(false);
+		expect(
+			cursorProviderTestUtils.hasTrailingUserMessagesAfterToolResults({
+				...base,
+				messages: [...base.messages, makeAssistantMessage(), toolResult, { role: "user", content: "follow up", timestamp: 4 }],
+			}),
+		).toBe(true);
 	});
 
 	it("emits text deltas as pi text stream events", async () => {
@@ -828,9 +867,11 @@ describe("streamCursor", () => {
 				}),
 		);
 		let sendCallCount = 0;
+		let firstOnDelta: CursorDeltaHandler | undefined;
 		const mockSend = vi.fn().mockImplementation(async (message: { text?: string }, opts: { onDelta: CursorDeltaHandler }) => {
 			sendCallCount += 1;
 			if (sendCallCount === 1) {
+				firstOnDelta = opts.onDelta;
 				opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "bash", args: { command: "git status" } }, callId: "c1" } });
 				opts.onDelta({
 					update: {
@@ -897,6 +938,7 @@ describe("streamCursor", () => {
 		const steerEventsPromise = collectEvents(streamCursor(makeModel(), steerContext, { apiKey: "test-key" }));
 		await vi.waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
 
+		firstOnDelta?.({ update: { type: "text-delta", text: "Old run text that should not leak." } });
 		resolveRun({ id: "run-1", status: "finished", result: "Would have kept going without steer." });
 
 		const steerEvents = await steerEventsPromise;
@@ -906,8 +948,69 @@ describe("streamCursor", () => {
 
 		const steerPrompt = mockSend.mock.calls[1]?.[0] as { text?: string };
 		expect(steerPrompt.text).toContain("User: and push");
+		expect(collectTextDeltas(steerEvents)).not.toContain("Old run text that should not leak.");
 		const steerDone = getDoneEvent(steerEvents);
 		expect(steerDone.reason).toBe("stop");
+	});
+
+	it("settles a scope-active live run directly when context has no matching tool results", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		const registeredTools: RegisteredTool[] = [];
+		await registerNativeToolDisplayForTest(registeredTools);
+
+		let resolveRun: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		const runWait = vi.fn(
+			() =>
+				new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+					resolveRun = resolve;
+				}),
+		);
+		let firstOnDelta: CursorDeltaHandler | undefined;
+		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+			firstOnDelta = opts.onDelta;
+			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "bash", args: { command: "git status" } }, callId: "c1" } });
+			opts.onDelta({
+				update: {
+					type: "tool-call-completed",
+					toolCall: {
+						name: "bash",
+						result: { status: "success", value: { stdout: "clean", stderr: "", exitCode: 0 } },
+					},
+					callId: "c1",
+				},
+			});
+			return {
+				id: "run-1",
+				agentId: "agent-1",
+				status: "running",
+				wait: runWait,
+				cancel: vi.fn(),
+				supports: () => true,
+				unsupportedReason: () => undefined,
+			};
+		});
+		mockedCreate.mockResolvedValue({
+			agentId: "agent-1",
+			send: mockSend,
+			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
+		});
+
+		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		expect(getDoneEvent(firstEvents).reason).toBe("toolUse");
+
+		firstOnDelta?.({ update: { type: "text-delta", text: "Late scoped text." } });
+		const scopedEventsPromise = collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		await Promise.resolve();
+		resolveRun({ id: "run-1", status: "finished", result: "Late scoped final." });
+
+		const scopedEvents = await Promise.race([
+			scopedEventsPromise,
+			new Promise<never>((_, reject) => setTimeout(() => reject(new Error("scope-active live run settlement timed out")), 1000)),
+		]);
+
+		expect(mockSend).toHaveBeenCalledTimes(1);
+		expect(collectTextDeltas(scopedEvents)).toContain("Late scoped text.");
+		expect(getDoneEvent(scopedEvents).reason).toBe("stop");
 	});
 
 	it("uses Cursor shell-output-delta as display-only fallback when completed shell output is empty", async () => {

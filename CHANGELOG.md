@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add packaged smoke-script entrypoints for the partial live smoke helper, steering RPC smoke, and smoke JSONL validator.
+
 ### Fixed
 
 - Suppress late Cursor SDK hook-load compatibility warnings (`[hooks] …`) during first-send workspace bootstrap so they do not corrupt pi's TUI when ambient setting sources load Claude/Cursor hook configs.

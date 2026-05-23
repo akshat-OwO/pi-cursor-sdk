@@ -22,6 +22,14 @@ mkdir -p "$SMOKE_DIR"
 pi -e . --list-models cursor
 ```
 
+The repo also ships partial automation for the prerequisite/basic/default-settings/TUI/steering/diagnostic/JSONL subset:
+
+```bash
+npm run smoke:live
+```
+
+The script is a helper only; release readiness still requires the manual checks below for bridge, standalone native replay, abort/cancel, packaging, cleanup, and any touched runtime surface not covered by the helper.
+
 Pass criteria:
 
 - `cursor/composer-2.5` appears in the model list.
@@ -190,37 +198,7 @@ Pass criteria:
 After all live runs, scan JSONL structurally instead of reading raw content into a report:
 
 ```bash
-node <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const root = process.env.SMOKE_DIR;
-const files = [];
-function walk(dir) {
-  for (const name of fs.readdirSync(dir)) {
-    const p = path.join(dir, name);
-    const st = fs.statSync(p);
-    if (st.isDirectory()) walk(p);
-    else if (p.endsWith('.jsonl')) files.push(p);
-  }
-}
-walk(root);
-let failures = 0;
-for (const file of files.sort()) {
-  const records = fs.readFileSync(file, 'utf8').trim().split(/\n+/).filter(Boolean).map(JSON.parse);
-  const messages = records.filter((record) => record.type === 'message').map((record) => record.message);
-  const assistants = messages.filter((message) => message.role === 'assistant');
-  const usage = assistants.map((message) => message.usage).filter(Boolean);
-  const badUsage = usage.filter((u) =>
-    typeof u.input !== 'number' || u.input < 0 ||
-    typeof u.output !== 'number' || u.output < 0 ||
-    typeof u.totalTokens !== 'number' || u.totalTokens < 0 ||
-    u.cacheRead !== 0 || u.cacheWrite !== 0
-  );
-  if (usage.length !== assistants.length || badUsage.length > 0) failures += 1;
-  console.log(JSON.stringify({ file: path.relative(root, file), assistantCount: assistants.length, usageCount: usage.length, badUsageCount: badUsage.length }));
-}
-process.exit(failures === 0 ? 0 : 1);
-NODE
+node scripts/validate-smoke-jsonl.mjs "$SMOKE_DIR"
 ```
 
 Pass criteria:
