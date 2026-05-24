@@ -272,6 +272,53 @@ describe("extension factory", () => {
 		expect(pi._registered[1].config.models).toBe(refreshedModels);
 	});
 
+	it("ignores stale extension ctx when background live refresh completes on a stale pi api", async () => {
+		const cachedModels = [
+			{
+				id: "composer-2",
+				name: "Cursor Composer 2",
+				reasoning: false,
+				input: ["text", "image"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 128000,
+				maxTokens: 16384,
+			},
+		];
+		const refreshedModels = [
+			{
+				id: "gpt-5.5@1m",
+				name: "GPT-5.5 @ 1m",
+				reasoning: true,
+				input: ["text", "image"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 1000000,
+				maxTokens: 16384,
+			},
+		];
+		mockedLoadCachedCursorModels.mockReturnValueOnce(cachedModels);
+		let resolveDiscover: ((models: typeof refreshedModels) => void) | undefined;
+		mockedDiscover.mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveDiscover = resolve;
+			}),
+		);
+
+		const pi = createMockPi();
+		pi.registerProvider.mockImplementation((name: string, config: ProviderConfig) => {
+			if (pi._registered.length > 0) {
+				throw new Error("This extension ctx is stale after session replacement or reload.");
+			}
+			pi._registered.push({ name, config });
+		});
+		await extensionFactory(pi);
+
+		resolveDiscover!(refreshedModels);
+		await vi.waitFor(() => expect(mockedDiscover).toHaveBeenCalledOnce());
+		expect(pi.registerProvider).toHaveBeenCalledTimes(2);
+		expect(pi._registered).toHaveLength(1);
+		expect(pi._registered[0].config.models).toBe(cachedModels);
+	});
+
 	it("keeps cached Cursor models when background live refresh falls back", async () => {
 		const cachedModels = [
 			{
