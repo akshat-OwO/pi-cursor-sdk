@@ -48,7 +48,7 @@ let agentSettingsDir: string | undefined;
 type DiscoverOptions = Parameters<typeof discoverModels>[0];
 type RegisteredTool = ToolDefinition<TSchema, unknown, unknown>;
 type TestExtensionContext = Pick<ExtensionContext, "cwd" | "hasUI" | "model"> & {
-	ui: Pick<ExtensionContext["ui"], "notify" | "setStatus" | "select" | "input">;
+	ui: Pick<ExtensionContext["ui"], "notify" | "setStatus" | "select" | "input" | "setFooter">;
 	sessionManager: Pick<ExtensionContext["sessionManager"], "getBranch">;
 };
 type TestEventHandler = (event: unknown, ctx: TestExtensionContext) => Promise<void> | void;
@@ -72,7 +72,7 @@ function createTestExtensionContext(ctxOverrides: Partial<TestExtensionContext> 
 		cwd: process.cwd(),
 		hasUI: true,
 		model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"],
-		ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn() },
+		ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn(), setFooter: vi.fn() },
 		sessionManager: { getBranch: vi.fn(() => []) },
 		...ctxOverrides,
 	};
@@ -552,7 +552,7 @@ describe("extension factory", () => {
 			cwd: process.cwd(),
 			hasUI: true,
 			model: undefined,
-			ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn() },
+			ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn(), setFooter: vi.fn() },
 			sessionManager: { getBranch: vi.fn(() => []) },
 		});
 
@@ -579,7 +579,7 @@ describe("extension factory", () => {
 			cwd: process.cwd(),
 			hasUI: true,
 			model: undefined,
-			ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn() },
+			ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn(), setFooter: vi.fn() },
 			sessionManager: { getBranch: vi.fn(() => []) },
 		});
 

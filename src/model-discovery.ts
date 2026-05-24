@@ -73,7 +73,7 @@ async function getStoredCursorApiKey(): Promise<string | undefined> {
 	}
 }
 
-async function getDiscoveryApiKey(): Promise<string | undefined> {
+export async function getCursorApiKey(): Promise<string | undefined> {
 	const cliApiKey = normalizeApiKey(getCliApiKeyFromArgv());
 	if (cliApiKey) return cliApiKey;
 
@@ -503,7 +503,7 @@ export function loadCachedCursorModels(): ProviderModelConfig[] | undefined {
 }
 
 export async function discoverModels(options: DiscoverModelsOptions = {}): Promise<ProviderModelConfig[]> {
-	const apiKey = await getDiscoveryApiKey();
+	const apiKey = await getCursorApiKey();
 	if (!apiKey) {
 		return useFallbackModels(options, {
 			reason: "missing-api-key",

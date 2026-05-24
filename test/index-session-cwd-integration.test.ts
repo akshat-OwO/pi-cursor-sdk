@@ -38,6 +38,11 @@ vi.mock("@cursor/sdk", () => ({
 	Agent: {
 		create: vi.fn().mockResolvedValue(createMockAgent()),
 	},
+	Cursor: {
+		repositories: {
+			list: vi.fn(),
+		},
+	},
 	createAgentPlatform: vi.fn().mockResolvedValue({
 		checkpointStore: { loadLatest: vi.fn().mockResolvedValue(undefined) },
 	}),
@@ -49,6 +54,7 @@ import extensionFactory from "../src/index.js";
 import { discoverModels, loadCachedCursorModels } from "../src/model-discovery.js";
 import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
 import { __testUtils as cursorSessionCwdTestUtils } from "../src/cursor-session-cwd.js";
+import { __testUtils as cloudRuntimeTestUtils } from "../src/cursor-cloud-runtime.js";
 import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/cursor-pi-tool-bridge.js";
 
 const mockedDiscover = vi.mocked(discoverModels);
@@ -138,6 +144,7 @@ describe("extension session cwd integration", () => {
 		delete process.env.PI_CURSOR_SETTING_SOURCES;
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 		cursorSessionCwdTestUtils.reset();
+		cloudRuntimeTestUtils.reset();
 		mockedLoadCachedCursorModels.mockReturnValue(undefined);
 		mockedAgentCreate.mockResolvedValue(createMockAgent());
 		mockedDiscover.mockResolvedValue([
@@ -155,6 +162,7 @@ describe("extension session cwd integration", () => {
 
 	afterEach(async () => {
 		cursorSessionCwdTestUtils.reset();
+		cloudRuntimeTestUtils.reset();
 		await cursorPiToolBridgeTestUtils.resetRegisteredBridgeForTests();
 	});
 
@@ -179,5 +187,30 @@ describe("extension session cwd integration", () => {
 		} finally {
 			rmSync(sessionDir, { recursive: true, force: true });
 		}
+	});
+
+	it("passes cloud repository config from runtime selection through streamSimple to Agent.create", async () => {
+		const { setCursorCloudSelection, createCursorCloudSelection } = await import("../src/cursor-cloud-runtime.js");
+		setCursorCloudSelection(createCursorCloudSelection("https://github.com/acme/widgets"));
+
+		const pi = createMockPi();
+		await extensionFactory(pi);
+
+		expect(pi.registerProvider).toHaveBeenCalledOnce();
+		const streamSimple = pi._registered[0]?.config.streamSimple;
+		expect(streamSimple).toBe(streamCursor);
+
+		await collectEvents(streamSimple!(makeModel(), makeContext(), { apiKey: "test-key" }));
+
+		expect(mockedAgentCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				cloud: { repos: [{ url: "https://github.com/acme/widgets" }] },
+			}),
+		);
+		expect(mockedAgentCreate).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				local: expect.anything(),
+			}),
+		);
 	});
 });

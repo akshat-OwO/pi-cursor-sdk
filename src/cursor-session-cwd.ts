@@ -3,6 +3,7 @@ import {
 	registerCursorSessionScope,
 	__testUtils as cursorSessionScopeTestUtils,
 } from "./cursor-session-scope.js";
+import { getCursorCloudSelection } from "./cursor-cloud-runtime.js";
 import type { ExtensionHandler, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 
 interface CursorSessionCwdExtensionApi {
@@ -16,6 +17,10 @@ interface CursorSessionCwdExtensionApi {
  */
 export function getCursorSessionCwd(): string {
 	return getCursorSessionCwdFromScope();
+}
+
+export function getCursorRuntimeDisplayCwd(): string {
+	return getCursorCloudSelection()?.displayPath ?? getCursorSessionCwdFromScope();
 }
 
 export function registerCursorSessionCwd(pi: CursorSessionCwdExtensionApi): void {

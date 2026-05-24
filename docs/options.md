@@ -9,6 +9,7 @@ Boolean env vars accept `1`/`true`/`on`/`yes`/`enabled` and `0`/`false`/`off`/`n
 | Command | Description |
 | --- | --- |
 | `/cursor-refresh-models` | Refresh live Cursor model catalog without restarting pi |
+| `/cursor-cloud` | Switch Cursor SDK runs between local workspace and a connected cloud repository |
 | `/cursor-settings` | Toggle compact tool display (interactive TUI; reloads after change) |
 | `/login` | Pi-native auth; choose **Use an API key** → **Cursor** |
 | `/model` | Pi-native model picker |
@@ -105,6 +106,10 @@ PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1 pi --model cursor/composer-2.5
 
 # Compact replay rows for this session
 PI_CURSOR_COMPACT_TOOL_DISPLAY=1 pi --model cursor/composer-2.5
+
+# Run against a connected Cursor cloud repository (interactive TUI)
+pi --model cursor/composer-2.5
+# then /cursor-cloud
 
 # Load only project + user Cursor settings
 PI_CURSOR_SETTING_SOURCES=project,user pi --model cursor/composer-2.5

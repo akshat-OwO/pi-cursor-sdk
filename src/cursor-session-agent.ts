@@ -15,6 +15,7 @@ import {
 	type CursorPiToolBridgeRun,
 } from "./cursor-pi-tool-bridge.js";
 import { computeCursorContextFingerprint } from "./context.js";
+import { getCursorCloudSelection, type CursorCloudSelection } from "./cursor-cloud-runtime.js";
 import { getCursorSessionScopeKey, onCursorSessionScopeKeyChange } from "./cursor-session-scope.js";
 
 export interface SessionCursorAgentSendState {
@@ -73,6 +74,7 @@ interface SessionCursorAgentCreateParams {
 	cwd: string;
 	modelSelection: ModelSelection;
 	settingSources?: SettingSource[];
+	cloudRepo?: CursorCloudSelection;
 	onBridgeToolRequest?: (request: CursorPiBridgeToolRequest) => void;
 	createAgent?: typeof Agent.create;
 }
@@ -117,13 +119,16 @@ function buildBridgePoolKeySuffix(): string {
 }
 
 function buildSessionAgentPoolKey(scopeKey: string, params: SessionCursorAgentCreateParams): string {
+	const runtimeKey = params.cloudRepo
+		? `cloud:${params.cloudRepo.url}`
+		: `local:${params.cwd}`;
 	return [
 		scopeKey,
-		params.cwd,
+		runtimeKey,
 		buildModelPoolKey(params.modelSelection),
-		buildSettingSourcesPoolKey(params.settingSources),
+		params.cloudRepo ? "settings:cloud" : buildSettingSourcesPoolKey(params.settingSources),
 		buildApiKeyPoolKeyFingerprint(params.apiKey),
-		buildBridgePoolKeySuffix(),
+		params.cloudRepo ? "bridge:cloud" : buildBridgePoolKeySuffix(),
 	].join("\0");
 }
 
@@ -187,26 +192,32 @@ async function createSessionAgentEntry(
 	poolKey: string,
 	params: SessionCursorAgentCreateParams,
 ): Promise<SessionCursorAgentPoolEntry> {
-	const registeredBridge = getRegisteredCursorPiToolBridge();
+	const createAgent = params.createAgent ?? Agent.create;
 	let bridgeRun: CursorPiToolBridgeRun | undefined;
-	if (registeredBridge) {
-		bridgeRun = await registeredBridge.createRun({
-			onToolRequest: params.onBridgeToolRequest,
-		});
-		if (!bridgeRun.enabled || !bridgeRun.mcpServers) {
-			await bridgeRun.dispose();
-			bridgeRun = undefined;
+	if (!params.cloudRepo) {
+		const registeredBridge = getRegisteredCursorPiToolBridge();
+		if (registeredBridge) {
+			bridgeRun = await registeredBridge.createRun({
+				onToolRequest: params.onBridgeToolRequest,
+			});
+			if (!bridgeRun.enabled || !bridgeRun.mcpServers) {
+				await bridgeRun.dispose();
+				bridgeRun = undefined;
+			}
 		}
 	}
 
 	const resolvedPoolKey = buildSessionAgentPoolKey(scopeKey, params);
-	const createAgent = params.createAgent ?? Agent.create;
 	let agent: SDKAgent;
 	try {
 		agent = await createAgent({
 			apiKey: params.apiKey,
 			model: params.modelSelection,
-			local: params.settingSources ? { cwd: params.cwd, settingSources: params.settingSources } : { cwd: params.cwd },
+			...(params.cloudRepo
+				? { cloud: { repos: [{ url: params.cloudRepo.url }] } }
+				: params.settingSources
+					? { local: { cwd: params.cwd, settingSources: params.settingSources } }
+					: { local: { cwd: params.cwd } }),
 			...(bridgeRun?.mcpServers ? { mcpServers: bridgeRun.mcpServers } : {}),
 		});
 	} catch (error) {

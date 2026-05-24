@@ -77,6 +77,7 @@ Quick reference:
 | What | How |
 | --- | --- |
 | Refresh model catalog | `/cursor-refresh-models` |
+| Switch to cloud repository | `/cursor-cloud` |
 | Compact replay tool rows | `/cursor-settings` or `cursorCompactToolDisplay` in settings |
 | Disable pi→Cursor tool bridge | `PI_CURSOR_PI_TOOL_BRIDGE=0` |
 | Narrow Cursor settings/MCP load | `PI_CURSOR_SETTING_SOURCES=project,user,plugins` |
@@ -92,7 +93,8 @@ Details: [docs/cursor-native-tool-replay.md](docs/cursor-native-tool-replay.md).
 
 ## Limits
 
-- Local Cursor SDK agents only (no cloud agents).
+- **Local (default):** Cursor SDK agents run against the pi session cwd with optional pi tool bridge.
+- **Cloud:** Run `/cursor-cloud` to pick a connected repository; footer shows `org/repo • cloud` (accent-colored) and agents use `cloud: { repos: [...] }`.
 - Fallback model snapshot when discovery cannot authenticate; live runs still need a key.
 - Cursor setting sources default to `all`; bootstrap noise is filtered from the TUI.
 - Token usage in pi is approximate; see [docs/cursor-model-ux-spec.md](docs/cursor-model-ux-spec.md) for accounting policy.

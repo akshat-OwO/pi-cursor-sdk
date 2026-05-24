@@ -27,7 +27,8 @@ import {
 	estimateCursorPromptInputTokens,
 	getCursorPromptOptions,
 } from "./cursor-usage-accounting.js";
-import { getCursorSessionCwd } from "./cursor-session-cwd.js";
+import { getCursorSessionCwd, getCursorRuntimeDisplayCwd } from "./cursor-session-cwd.js";
+import { getCursorCloudSelection } from "./cursor-cloud-runtime.js";
 import { getActiveContextToolNames } from "./cursor-context-tools.js";
 import { CursorLiveRunAbortError, type CursorLiveRun } from "./cursor-live-run-coordinator.js";
 import {
@@ -170,7 +171,9 @@ export function streamCursor(
 
 			// pi-ai Context/SimpleStreamOptions do not expose ExtensionContext.cwd; bridge via session_start
 			// until pi threads session cwd into streamSimple (cwd can change without a new session event).
-			const cwd = getCursorSessionCwd();
+			const sessionCwd = getCursorSessionCwd();
+			const cloudRepo = getCursorCloudSelection();
+			const displayCwd = getCursorRuntimeDisplayCwd();
 			const selection = buildCursorModelSelection(model.id, options?.reasoning ?? "off");
 			const settingSources = resolveCursorSettingSources();
 
@@ -178,7 +181,8 @@ export function streamCursor(
 			restoreCursorSdkOutputFilter = installCursorSdkOutputFilter();
 			const sessionAgentAcquireParams = {
 				apiKey,
-				cwd,
+				cwd: sessionCwd,
+				cloudRepo,
 				modelSelection: selection,
 				settingSources,
 				onBridgeToolRequest: (request: CursorPiBridgeToolRequest) => {
@@ -235,7 +239,7 @@ export function streamCursor(
 			const turnCoordinator = new CursorSdkTurnCoordinator({
 				stream,
 				partial,
-				cwd,
+				cwd: displayCwd,
 				resolvedApiKey,
 				liveRun,
 				useNativeToolReplay,

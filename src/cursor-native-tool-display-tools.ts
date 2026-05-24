@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { TSchema } from "typebox";
-import { getCursorSessionCwd } from "./cursor-session-cwd.js";
+import { getCursorRuntimeDisplayCwd } from "./cursor-session-cwd.js";
 import {
 	CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
 	CURSOR_REPLAY_LEGACY_TOOL_NAMES,
@@ -131,8 +131,8 @@ export function createNativeCursorToolDefinition(toolName: NativeCursorToolName,
 }
 
 export function registerNativeCursorTool(pi: Pick<import("@earendil-works/pi-coding-agent").ExtensionAPI, "registerTool">, toolName: NativeCursorToolName): void {
-	const definition = createNativeCursorToolDefinition(toolName, getCursorSessionCwd());
-	const registeredTool = wrapNativeCursorTool(definition, () => createNativeCursorToolDefinition(toolName, getCursorSessionCwd()));
+	const definition = createNativeCursorToolDefinition(toolName, getCursorRuntimeDisplayCwd());
+	const registeredTool = wrapNativeCursorTool(definition, () => createNativeCursorToolDefinition(toolName, getCursorRuntimeDisplayCwd()));
 	registeredNativeToolDefinitions.set(toolName, registeredTool as ToolDefinition<TSchema, unknown, unknown>);
 	pi.registerTool(registeredTool);
 	syncCompactNativeToolDisplayShells();
