@@ -152,6 +152,7 @@ describe("extension factory", () => {
 		delete process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY;
 		delete process.env.PI_CURSOR_REGISTER_NATIVE_TOOLS;
 		delete process.env.PI_CURSOR_PI_TOOL_BRIDGE;
+		delete process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY;
 		await cursorPiToolBridgeTestUtils.resetRegisteredBridgeForTests();
 		cursorSessionCwdTestUtils.reset();
 		nativeToolDisplayTestUtils.reset();
@@ -750,6 +751,7 @@ describe("extension factory", () => {
 
 	it("renders neutral cursor partial calls from activity metadata", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
 		await extensionFactory(pi);
@@ -777,10 +779,13 @@ describe("extension factory", () => {
 
 	it("renders compact read, grep, find, bash, edit, write, and ls native tool calls without boxed shells", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
 		await extensionFactory(pi);
-		await runSessionStartHandlers(pi);
+		await runSessionStartHandlers(pi, {
+			model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"],
+		});
 		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
 
 		const readTool = pi._tools.find((tool) => tool.name === "read");
@@ -817,8 +822,45 @@ describe("extension factory", () => {
 		);
 	});
 
+	it("uses default pi tool shells for native replay when compact display is not enabled", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		await extensionFactory(pi);
+		await runSessionStartHandlers(pi);
+
+		const readTool = pi._tools.find((tool) => tool.name === "read");
+		const cursorTool = pi._tools.find((tool) => tool.name === "cursor");
+
+		expect(readTool.renderShell).toBeUndefined();
+		expect(cursorTool.renderShell).toBeUndefined();
+	});
+
+	it("does not apply compact display on non-Cursor models even when PI_CURSOR_COMPACT_TOOL_DISPLAY=1", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "1";
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		await extensionFactory(pi);
+		await runSessionStartHandlers(pi, {
+			model: { provider: "opencode", api: "opencode-go", id: "kimi-k2.6" } as ExtensionContext["model"],
+		});
+		await runModelSelectHandlers(pi, { provider: "opencode", api: "opencode-go", id: "kimi-k2.6" } as ExtensionContext["model"]);
+
+		const readTool = pi._tools.find((tool) => tool.name === "read");
+		const cursorTool = pi._tools.find((tool) => tool.name === "cursor");
+		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
+
+		expect(readTool.renderShell).toBeUndefined();
+		expect(cursorTool.renderShell).toBeUndefined();
+		expect(readTool.renderCall?.({ path: "README.md", limit: 80 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).not.toBe(
+			"  → Read README.md [limit=80]",
+		);
+	});
+
 	it("renders legacy Cursor replay-only tool labels without raw synthetic names", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
 		await extensionFactory(pi);
@@ -880,6 +922,7 @@ describe("extension factory", () => {
 
 	it("renders native edit and write replay wrappers without synthetic card names", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
 		await extensionFactory(pi);
@@ -941,6 +984,7 @@ describe("extension factory", () => {
 
 	it("renders Cursor replay-only results with collapsed previews instead of summary-only cards", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
 		await extensionFactory(pi);

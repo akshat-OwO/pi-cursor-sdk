@@ -27,6 +27,7 @@ import {
 	renderCompactCursorReplayCall,
 	renderCompactCursorReplayResult,
 } from "./cursor-compact-tool-display.js";
+import { shouldUseCompactCursorReplayToolDisplay } from "./cursor-native-tool-display-state.js";
 
 export const CURSOR_REPLAY_COLLAPSED_PREVIEW_LINES = 8;
 export const CURSOR_REPLAY_PREVIEW_MAX_CHARS = 4000;
@@ -436,25 +437,30 @@ export function createCursorReplayOnlyToolDefinition(toolName: CursorReplayToolN
 			`Use this tool only for replaying Cursor SDK ${cursorToolName} results that were already produced by Cursor; it does not execute ${sideEffectDescription}.`,
 		],
 		parameters: cursorReplayToolSchema,
-		renderShell: "self",
 		async execute() {
 			throw new Error(`No recorded Cursor ${cursorToolName} result was available. This replay-only tool does not execute ${sideEffectDescription}.`);
 		},
 		renderCall(args, theme, context) {
-			return renderCompactCursorReplayCall(toolName, args as Record<string, unknown>, theme, context);
+			if (shouldUseCompactCursorReplayToolDisplay(toolName)) {
+				return renderCompactCursorReplayCall(toolName, args as Record<string, unknown>, theme, context);
+			}
+			return renderCursorReplayCall(toolName, args as Record<string, unknown>, theme, context.isPartial);
 		},
 		renderResult(result, options, theme, context) {
-			return renderCompactCursorReplayResult(toolName, result, options, theme, context, context.isError, () => {
-				const renderResult = renderCursorReplayResult;
-				return (currentResult, currentOptions, currentTheme, currentContext) =>
-					renderResult(
-						currentResult,
-						currentOptions,
-						currentTheme,
-						currentContext as Parameters<typeof renderCursorReplayResult>[3],
-						currentContext.isError,
-					);
-			});
+			if (shouldUseCompactCursorReplayToolDisplay(toolName)) {
+				return renderCompactCursorReplayResult(toolName, result, options, theme, context, context.isError, () => {
+					const renderResult = renderCursorReplayResult;
+					return (currentResult, currentOptions, currentTheme, currentContext) =>
+						renderResult(
+							currentResult,
+							currentOptions,
+							currentTheme,
+							currentContext as Parameters<typeof renderCursorReplayResult>[3],
+							currentContext.isError,
+						);
+				});
+			}
+			return renderCursorReplayResult(result, options, theme, context, context.isError);
 		},
 	};
 }

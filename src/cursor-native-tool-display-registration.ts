@@ -9,6 +9,8 @@ import {
 import {
 	isCursorNativeToolRegistrationRequested,
 	registeredNativeToolNames,
+	setNativeToolDisplayModel,
+	syncCompactNativeToolDisplayShells,
 } from "./cursor-native-tool-display-state.js";
 import { isCursorReplayToolName } from "./cursor-tool-names.js";
 
@@ -27,6 +29,12 @@ type NativeRegistrationContext = { model?: ExtensionContext["model"] };
 
 function isCursorModel(model: ExtensionContext["model"]): boolean {
 	return model?.provider === "cursor" || model?.api === "cursor-sdk";
+}
+
+function syncNativeToolDisplayForModel(pi: Pick<ExtensionAPI, "getActiveTools" | "setActiveTools">, model: ExtensionContext["model"]): void {
+	setNativeToolDisplayModel(model);
+	syncCompactNativeToolDisplayShells();
+	syncRegisteredNativeCursorToolsForModel(pi, model);
 }
 
 export function syncRegisteredNativeCursorToolsForModel(pi: Pick<ExtensionAPI, "getActiveTools" | "setActiveTools">, model: ExtensionContext["model"]): void {
@@ -50,7 +58,7 @@ export function syncRegisteredNativeCursorToolsForModel(pi: Pick<ExtensionAPI, "
 	if (changed) pi.setActiveTools([...activeToolNames]);
 }
 
-function registerAvailableNativeCursorTools(pi: CursorNativeToolRegistryApi, ctx: NativeRegistrationContext): void {
+function registerAvailableNativeCursorTools(pi: CursorNativeToolRegistryApi, _ctx: NativeRegistrationContext): void {
 	if (!isCursorNativeToolRegistrationRequested()) {
 		registeredNativeToolNames.clear();
 		return;
@@ -61,22 +69,21 @@ function registerAvailableNativeCursorTools(pi: CursorNativeToolRegistryApi, ctx
 		registerNativeCursorTool(pi, toolName);
 		registeredNativeToolNames.add(toolName);
 	}
-
-	syncRegisteredNativeCursorToolsForModel(pi, ctx.model);
 }
 
 export function registerCursorNativeToolDisplay(pi: CursorNativeToolDisplayExtensionApi): void {
 	pi.on("session_start", (_event, ctx) => {
 		registerAvailableNativeCursorTools(pi, ctx);
+		syncNativeToolDisplayForModel(pi, ctx.model);
 	});
 	pi.on("before_agent_start", (_event, ctx) => {
-		syncRegisteredNativeCursorToolsForModel(pi, ctx.model);
+		syncNativeToolDisplayForModel(pi, ctx.model);
 	});
 	pi.on("turn_start", (_event, ctx) => {
-		syncRegisteredNativeCursorToolsForModel(pi, ctx.model);
+		syncNativeToolDisplayForModel(pi, ctx.model);
 	});
 	pi.on("model_select", (event) => {
-		syncRegisteredNativeCursorToolsForModel(pi, event.model);
+		syncNativeToolDisplayForModel(pi, event.model);
 	});
 }
 
