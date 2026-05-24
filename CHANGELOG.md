@@ -13,6 +13,7 @@
 - Complete phase-2 remediation for #23/#24/#25 by splitting bridge ownership across snapshot/server/run/abort/diagnostics/MCP/types modules, splitting native replay ownership across state/registration/replay/tools modules, and unifying tool completion routing through `resolveToolCompletion`.
 - Replace monolithic provider test coverage with focused stream/bridge/replay/live-run suites plus shared harness helpers.
 - Promote smoke automation into packaged entrypoints (`npm run smoke:live`, `npm run smoke:steering`, `npm run smoke:jsonl`) and make helper retry/polling behavior explicit (TUI answer/footer polling plus deterministic tmux cleanup).
+- Document the hard maintainer rule that Cursor SDK behavior must be verified against the installed `@cursor/sdk` package and/or official TypeScript SDK docs before implementation or release claims.
 - Bump package metadata to `0.1.17` so the dry-run tarball no longer collides with the existing `v0.1.16` tag.
 
 ### Fixed
@@ -27,6 +28,7 @@
 - Reject bridge MCP calls cleanly when tool-dispatch handlers throw, and avoid suppressing unrelated MCP replay solely because an external payload reuses a known bridge request ID.
 - Bound native replay diff/write previews by both lines and characters, summarize non-text MCP content without dumping raw payload JSON, and make expanded-diff truncation copy truthful.
 - Change smoke forbidden-material scans to report only matching file names, not secret-bearing matched lines.
+- Harden live-smoke direct-output checks so a step logs `PASS` only after both command exit and expected stdout assertion succeed, with the basic prompt retrying once on empty output even when the first command exits zero.
 
 ## 0.1.16 - 2026-05-22
 
