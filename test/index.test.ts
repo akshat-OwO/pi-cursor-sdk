@@ -727,6 +727,32 @@ describe("extension factory", () => {
 		expect(rendered).not.toContain("cursor_mcp");
 	});
 
+	it("renders compact read, grep, and find native tool calls without boxed shells", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		await extensionFactory(pi);
+		await runSessionStartHandlers(pi);
+		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
+
+		const readTool = pi._tools.find((tool) => tool.name === "read");
+		const grepTool = pi._tools.find((tool) => tool.name === "grep");
+		const findTool = pi._tools.find((tool) => tool.name === "find");
+
+		expect(readTool.renderShell).toBe("self");
+		expect(grepTool.renderShell).toBe("self");
+		expect(findTool.renderShell).toBe("self");
+		expect(readTool.renderCall?.({ path: "README.md", limit: 80 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"→ Read README.md [limit=80]",
+		);
+		expect(grepTool.renderCall?.({ pattern: "foo", path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"→ Grep foo in src",
+		);
+		expect(findTool.renderCall?.({ pattern: "**/*.ts", path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"→ Find **/*.ts in src",
+		);
+	});
+
 	it("renders legacy Cursor replay-only tool labels without raw synthetic names", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
@@ -1056,5 +1082,50 @@ describe("extension factory", () => {
 		expect(canRenderCursorToolNatively("cursor")).toBe(true);
 		expect(canRenderCursorToolNatively("cursor_edit")).toBe(true);
 		expect(canRenderCursorToolNatively("ls")).toBe(true);
+	});
+
+	it("skips compact read/grep/find replay wrappers when a global extension already owns them", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		mockedDiscover.mockResolvedValueOnce([]);
+		const compactExtensionPath = `${process.env.HOME}/.pi/agent/extensions/compact-tool-display/index.ts`;
+		const pi = createMockPi([
+			{
+				name: "read",
+				description: "compact read",
+				parameters: Type.Object({}),
+				sourceInfo: { source: "extension", path: compactExtensionPath, scope: "user", origin: "top-level" },
+			},
+			{
+				name: "grep",
+				description: "compact grep",
+				parameters: Type.Object({}),
+				sourceInfo: { source: "extension", path: compactExtensionPath, scope: "user", origin: "top-level" },
+			},
+			{
+				name: "find",
+				description: "compact find",
+				parameters: Type.Object({}),
+				sourceInfo: { source: "extension", path: compactExtensionPath, scope: "user", origin: "top-level" },
+			},
+			createBuiltinToolInfo("bash"),
+			createBuiltinToolInfo("edit"),
+			createBuiltinToolInfo("write"),
+			createBuiltinToolInfo("ls"),
+		]);
+		const notify = vi.fn();
+		await extensionFactory(pi);
+		await runSessionStartHandlers(pi, { ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn() } });
+
+		expect(pi._tools.map((tool) => tool.name)).not.toContain("read");
+		expect(pi._tools.map((tool) => tool.name)).not.toContain("grep");
+		expect(pi._tools.map((tool) => tool.name)).not.toContain("find");
+		expect(canRenderCursorToolNatively("read")).toBe(false);
+		expect(canRenderCursorToolNatively("grep")).toBe(false);
+		expect(canRenderCursorToolNatively("find")).toBe(false);
+		expect(canRenderCursorToolNatively("bash")).toBe(true);
+		expect(notify).toHaveBeenCalledWith(
+			expect.stringContaining("Cursor native tool replay skipped for read, grep, find"),
+			"warning",
+		);
 	});
 });

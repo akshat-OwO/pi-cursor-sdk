@@ -90,6 +90,22 @@ Bridge MCP names are also not pi tool names. Cursor may see names such as `pi__s
 
 Native replay wrappers are registered only for tool names not already owned by another extension. If another extension already owns a wrapper name needed for replay, pi-cursor-sdk skips only the conflicting wrapper and uses the scrubbed Cursor activity transcript for that tool instead. Legacy replay wrappers remain registered for old sessions, but their model-facing and user-visible labels are sanitized.
 
+### Compact read/grep/find display
+
+When pi-cursor-sdk owns the native replay wrappers for `read`, `grep`, and `find`, those cards use compact one-line call rendering instead of boxed tool shells:
+
+```
+→ Read README.md [limit=80]
+→ Grep pattern in src [glob=*.ts, limit=50]
+→ Find glob pattern in src [limit=200]
+```
+
+Collapsed output stays hidden until expanded (Ctrl+O or click). Errors still render in collapsed mode. Image read results show a one-line `[image loaded — expand to view]` hint when collapsed.
+
+Implementation lives in `src/cursor-compact-tool-display.ts`. The same formatting is mirrored in the optional global pi extension at `~/.pi/agent/extensions/compact-tool-display/` for non-Cursor models.
+
+**Do not install both compact renderers for the same tool names.** If the global `compact-tool-display` extension already registers `read`, `grep`, or `find`, pi-cursor-sdk skips its native replay wrappers for those names and Cursor activity falls back to scrubbed activity transcripts instead of native replay cards. For Cursor models, prefer pi-cursor-sdk's built-in compact display (`PI_CURSOR_NATIVE_TOOL_DISPLAY=1`, default) and remove the global extension. For all other pi models/providers, use the global extension only.
+
 Disable native replay registration entirely:
 
 ```bash

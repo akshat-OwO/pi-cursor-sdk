@@ -23,6 +23,12 @@ import {
 	renderNativeLookingCursorFileMutationCall,
 } from "./cursor-native-tool-display-replay.js";
 import {
+	type CompactNativeToolName,
+	isCompactNativeCursorToolName,
+	renderCompactNativeToolCall,
+	renderCompactNativeToolResult,
+} from "./cursor-compact-tool-display.js";
+import {
 	consumeCursorNativeToolDisplay,
 	isCursorFileMutationToolName,
 	isCursorReplayToolCallId,
@@ -41,8 +47,10 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 	definition: ToolDefinition<TParams, TDetails, TState>,
 	getCurrentDefinition: () => ToolDefinition<TParams, TDetails, TState>,
 ): ToolDefinition<TParams, TDetails, TState> {
+	const compactDisplay = isCompactNativeCursorToolName(definition.name);
 	return {
 		...definition,
+		...(compactDisplay ? { renderShell: "self" as const } : {}),
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const cursorDisplay = consumeCursorNativeToolDisplay(toolCallId);
 			if (cursorDisplay) {
@@ -68,6 +76,9 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 			if (isCursorFileMutationToolName(definition.name) && isCursorReplayToolCallId(context.toolCallId)) {
 				return renderNativeLookingCursorFileMutationCall(definition.name, args as Record<string, unknown>, theme, context.isPartial);
 			}
+			if (compactDisplay) {
+				return renderCompactNativeToolCall(definition.name as CompactNativeToolName, args as Record<string, unknown>, theme, context);
+			}
 			const currentRenderCall = getCurrentDefinition().renderCall;
 			return currentRenderCall ? currentRenderCall(args, theme, context) : new Text("", 0, 0);
 		},
@@ -75,6 +86,16 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 			const details = asCursorReplayToolDetails(result.details);
 			if (isCursorFileMutationToolName(definition.name) && details?.cursorToolName === definition.name) {
 				return renderCursorReplayResult(result, options, theme, context, context.isError);
+			}
+			if (compactDisplay) {
+				return renderCompactNativeToolResult(
+					result,
+					options,
+					theme,
+					context,
+					context.isError,
+					() => getCurrentDefinition().renderResult as ToolDefinition["renderResult"],
+				);
 			}
 			const currentRenderResult = getCurrentDefinition().renderResult;
 			return currentRenderResult ? currentRenderResult(result, options, theme, context) : new Text("", 0, 0);
