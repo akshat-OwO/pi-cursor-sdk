@@ -1,355 +1,122 @@
 # pi-cursor-sdk
 
-A pi provider extension that lets pi use Cursor models through the local `@cursor/sdk` agent runtime.
+Use Cursor models inside [pi](https://github.com/earendil-works/pi-coding-agent) via the local `@cursor/sdk` agent runtime. Keeps pi's native model picker, thinking controls, session restore, and footer UX.
 
-Use this extension if you want Cursor's model catalog inside pi while keeping pi's native model picker, thinking controls where the SDK exposes them, session restore, context display, and default footer UX.
-
-## Quick start
-
-1. Install the package:
-
-```bash
-pi install npm:pi-cursor-sdk
-```
-
-Or install from GitHub:
-
-```bash
-pi install https://github.com/fitchmultz/pi-cursor-sdk
-```
-
-2. Start pi with a Cursor model:
-
-```bash
-pi --model cursor/composer-2.5
-```
-
-3. In pi, run `/login`, choose `Use an API key`, choose `Cursor`, and paste your Cursor API key.
-
-If pi started without a key, run `/cursor-refresh-models` after `/login` to refresh the full live Cursor model catalog without restarting pi. Inside pi, use `/model` to choose another Cursor model.
-
-## Requirements
-
-- Node.js 22.19+
-- pi
-- a Cursor API key saved through `/login`, available as `CURSOR_API_KEY`, or passed with pi's `--api-key`
-
-No global `@cursor/sdk` install is required. This package depends on `@cursor/sdk`, so normal package installation brings in the SDK version this extension was built and tested against.
+Fork of [pi-cursor-sdk](https://github.com/fitchmultz/pi-cursor-sdk) by [Mitch Fultz](https://github.com/fitchmultz).
 
 ## Install
 
-### Global install
-
 ```bash
-pi install npm:pi-cursor-sdk
-```
+# from this fork
+pi install https://github.com/akshat-OwO/pi-cursor-sdk
 
-Alternative GitHub install:
+# project-local (writes .pi/settings.json)
+pi install -l https://github.com/akshat-OwO/pi-cursor-sdk
 
-```bash
-pi install https://github.com/fitchmultz/pi-cursor-sdk
-```
-
-### Project-local install
-
-Use `-l` if you want the package recorded in the current project's `.pi/settings.json` instead of your global pi settings:
-
-```bash
-pi install -l npm:pi-cursor-sdk
-```
-
-### Try from a local checkout
-
-For development from this repository:
-
-```bash
-npm install
+# dev checkout
+git clone https://github.com/akshat-OwO/pi-cursor-sdk.git && cd pi-cursor-sdk
+pnpm install
 pi -e . --model cursor/composer-2.5
 ```
 
-## Configure your Cursor API key
+**Requirements:** Node.js 22.19+, pi, and a Cursor API key.
 
-Preferred setup:
+## Quick start
 
 ```bash
 pi --model cursor/composer-2.5
 ```
 
-Then, inside pi:
+Inside pi: `/login` → **Use an API key** → **Cursor** → paste your key (saved to `~/.pi/agent/auth.json`).
 
-1. Run `/login`.
-2. Select `Use an API key`.
-3. Select `Cursor`.
-4. Paste your Cursor API key.
-5. The key is saved in pi's native `~/.pi/agent/auth.json`.
-
-If pi started without a key, fallback Cursor models still register so `/login` is reachable. After `/login`, fallback model runs can use the stored key, and `/cursor-refresh-models` refreshes the full live Cursor model catalog discovered from the Cursor SDK without restarting pi.
-
-Environment setup:
+Or set a key before launch:
 
 ```bash
 export CURSOR_API_KEY="your-key"
 pi --model cursor/composer-2.5
 ```
 
-One-shot setup:
-
-```bash
-pi --api-key "your-key" --model cursor/composer-2.5 -p "Say ok only."
-```
-
-Discovery uses pi's native resolution order for this extension: `--api-key`, the stored `cursor` key in `~/.pi/agent/auth.json`, then `CURSOR_API_KEY`.
-
-Do not store the API key in `~/.pi/agent/cursor-sdk.json`. That file may be used for other non-secret extension state. `PATH` is only for executable lookup and should not contain the API key.
-
-## Verify your setup
-
-List Cursor models:
+Verify:
 
 ```bash
 pi --list-models cursor
-```
-
-Expected behavior:
-
-- with a valid key, Cursor models appear under the `cursor` provider
-- if discovery cannot authenticate or reach Cursor, pi may still show fallback Cursor models; after adding auth with `/login`, fallback model runs can use the saved key, and `/cursor-refresh-models` refreshes the live catalog
-
-Smoke test:
-
-```bash
 pi --model cursor/composer-2.5 -p "Reply with: ok"
 ```
 
-## Choosing a model
+If pi started without a key, fallback models still register so `/login` works. After auth, run `/cursor-refresh-models` to load the live catalog without restarting.
 
-Choose Cursor models interactively with `/model`, or pass a model on the command line:
+## Models
+
+Pick models with `/model` or `--model`:
 
 ```bash
 pi --model cursor/composer-2.5
-pi --model cursor/gpt-5.5@1m
-pi --model cursor/gpt-5.5@272k
-pi --model cursor/claude-opus-4-7@300k
-```
-
-How to read model IDs:
-
-- `cursor/...` is the Cursor provider registered by this extension
-- `@1m`, `@272k`, and `@300k` are context-window variants
-- `:medium`, `:high`, and `:xhigh` are pi thinking-level suffixes for models where the Cursor SDK exposes a pi-controllable thinking parameter
-- unambiguous latest-style Cursor aliases returned by `Cursor.models.list()` are registered too, using the same context suffixes when the target model has context variants; aliases shared by multiple base models or colliding with a base model ID are skipped because their SDK resolution and displayed metadata can diverge
-
-Examples with pi thinking controls:
-
-```bash
-pi --model cursor/gpt-5.5@1m:medium
-pi --model cursor/gpt-5.5@272k:xhigh
+pi --model cursor/composer-2.5-fast          # fast variant when SDK exposes fast=
+pi --model cursor/gpt-5.5@1m                 # context-window variant
+pi --model cursor/gpt-5.5@1m:medium          # thinking suffix
 pi --model cursor/gpt-5.5@1m --thinking medium
 ```
 
-Cursor `reasoning`, `effort`, and boolean `thinking` are not encoded into pi model IDs; pi uses native thinking controls instead. Cursor `context` and `fast` become pi-visible model variants because they affect native model metadata or runtime selection (`@1m`, `-fast`).
+| Suffix / pattern | Meaning |
+| --- | --- |
+| `cursor/…` | Cursor provider from this extension |
+| `@1m`, `@272k`, `@300k` | Context-window variants from the SDK catalog |
+| `-fast` | Fast mode variant (`fast=true`) |
+| `:medium`, `:high`, `:xhigh` | Pi thinking level when the SDK exposes a controllable thinking param |
 
-## Thinking support
+`thinking=no` in `--list-models` means pi cannot control thinking for that model—not that the model cannot think. Cursor may still emit thinking deltas that pi renders natively.
 
-All Cursor SDK models should be treated as thinking-capable Cursor models. The `thinking` column in `pi --list-models` is narrower: it only means pi can control a Cursor SDK thinking parameter for that model.
+Images from the **latest** user message are forwarded. Reattach or describe earlier images on follow-up turns.
 
-For models where Cursor exposes `reasoning`, `effort`, or boolean `thinking` parameters, pi's native thinking controls map to Cursor SDK params:
+## Options
 
-- `reasoning=none|low|medium|high|extra-high`
-- `effort=low|medium|high|xhigh|max`
-- `thinking=false|true` for boolean thinking models
+All slash commands, environment variables, and settings in one place: **[docs/options.md](docs/options.md)**.
 
-For Claude models with both `thinking` and `effort`, pi thinking `off` sends `thinking=false` and omits `effort`.
+Quick reference:
 
-### Why some Cursor models show `thinking=no`
+| What | How |
+| --- | --- |
+| Refresh model catalog | `/cursor-refresh-models` |
+| Compact replay tool rows | `/cursor-settings` or `cursorCompactToolDisplay` in settings |
+| Disable pi→Cursor tool bridge | `PI_CURSOR_PI_TOOL_BRIDGE=0` |
+| Narrow Cursor settings/MCP load | `PI_CURSOR_SETTING_SOURCES=project,user,plugins` |
+| Disable native replay cards | `PI_CURSOR_NATIVE_TOOL_DISPLAY=0` |
 
-In `pi --list-models`, `thinking=no` means pi cannot control the model's thinking level with `--thinking`, a final `:medium` model suffix, or shift+tab. It does not mean the Cursor model cannot think.
+## How it works (short)
 
-Some Cursor SDK models do not expose a `reasoning`, `effort`, or `thinking` parameter for the extension to set. Cursor thinking is still enabled/supported by the model, and Cursor may still emit thinking deltas. The extension surfaces those deltas through pi's native thinking rendering when the SDK emits them.
+- **Cursor-native tools:** SDK local-agent tools, Cursor settings, plugins, and configured Cursor MCP servers.
+- **Pi bridge (default on):** Active pi tools exposed to Cursor as `pi__*` MCP names; pi shows real tool names and runs normal pi tool flow. Overlapping built-ins (`read`, `bash`, `write`, `edit`, `grep`, `find`, `ls`) are hidden unless opted in.
+- **Native replay (default on in TTY):** Display-only cards for recorded Cursor SDK activity—never re-runs commands or mutates files.
 
-## Fast mode
-
-When a Cursor model supports Cursor's `fast` parameter, the extension registers two pi model variants:
-
-- `cursor/composer-2.5` — standard mode (`fast=false`)
-- `cursor/composer-2.5-fast` — fast mode (`fast=true`)
-
-Context-qualified models follow the same pattern, for example `cursor/gpt-5.5@1m` and `cursor/gpt-5.5@1m-fast`.
-
-Select the fast variant through native pi model selection (`/model`, `ctrl+l`, or `--model`). Fast mode is part of the model identity shown in pi's footer, not a separate extension status line.
-
-### Migration from `/cursor-fast`
-
-Older releases used `/cursor-fast`, `--cursor-fast`, and `--cursor-no-fast`, plus saved fast defaults in `~/.pi/agent/cursor-sdk.json`. Those controls are removed. Select a `-fast` model variant instead, for example `cursor/composer-2.5-fast`. Resumed sessions that relied on saved fast state keep the same base model ID but no longer auto-enable fast; switch to the matching `-fast` variant if you still want fast mode.
-
-## Images
-
-Images from the latest user message are forwarded to Cursor. Historical images are kept out of the transcript and appear only as `[image omitted from transcript]` placeholders, so follow-up questions about an earlier image should reattach the image or include a textual description. The extension advertises `text` and `image` input for Cursor models because Cursor's SDK accepts image messages and Cursor models are expected to support them.
-
-
-## Cursor provider tool contract
-
-Cursor runs use local Cursor SDK agents with two separate tool surfaces:
-
-- **Cursor-native surface:** Cursor local-agent tools, Cursor settings, plugins, and configured Cursor MCP servers. These remain owned by the Cursor SDK local agent path.
-- **pi bridge surface:** pi-cursor-sdk exposes bridgeable active pi tools through a per-run local loopback MCP bridge when the bridge is enabled and the current pi tool registry has exposed tools.
-
-Bridge capabilities are snapshotted from `pi.getActiveTools()` and `pi.getAllTools()` for each Cursor run. Cursor sees active bridgeable pi tools as collision-safe MCP names such as `pi__sem_reindex` only when they are exposed in that current run. Pi session output, tool cards, confirmations, hooks, renderers, history, and abort behavior use the real pi tool name, such as `sem_reindex`. The bridge queues Cursor's MCP call, emits a normal pi `toolCall`, waits for the matching pi `toolResult`, and resolves that result back into the same live Cursor SDK run without creating a new `Agent`, unless the run was disposed, aborted, or cancelled. The bridge does not call pi tool `execute()` handlers directly.
-
-Overlapping built-in pi tools (`read`, `bash`, `write`, `edit`, `grep`, `find`, `ls`) are hidden by default because Cursor local agents already have native equivalents. Extension/custom tools and non-overlapping active tools present in pi's active tool registry normally remain exposed. The bridge also exposes `cursor_ask_question` as `pi__cursor_ask_question` when enabled, allowing Cursor to ask the user through pi UI instead of silently choosing a default.
-
-Cursor-native tool replay is separate from the bridge. Replay cards are display-only recorded Cursor SDK activity. They never re-run Cursor-side commands, reapply Cursor edits, call MCP servers, or mutate pi state. See [Cursor native tool replay](docs/cursor-native-tool-replay.md).
-
-Bridge controls:
-
-```bash
-# Roll back to Cursor SDK tools/settings/MCP only; do not expose active pi tools through the bridge.
-PI_CURSOR_PI_TOOL_BRIDGE=0 pi --model cursor/composer-2.5
-
-# Opt in to also expose overlapping pi tool names through the bridge.
-PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1 pi --model cursor/composer-2.5
-
-# Override Cursor SDK MCP tool-call timeout, including bridged pi tools and configured Cursor MCP servers.
-PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS=7200 pi --model cursor/composer-2.5
-PI_CURSOR_MCP_TOOL_TIMEOUT_MS=7200000 pi --model cursor/composer-2.5
-
-# Emit scrubbed bridge diagnostics as JSONL to stderr with prefix [pi-cursor-sdk:bridge].
-PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1 pi --model cursor/composer-2.5
-```
-
-`PI_CURSOR_PI_TOOL_BRIDGE=0` is the supported rollback flag and disables the bridge entirely. The bridge also treats `false`, `off`, `none`, `no`, and `disabled` as off; `1`, `true`, `on`, `yes`, and `enabled` as on. `PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1` opts in to exposing overlapping pi tool names that Cursor already has native equivalents for. The Cursor MCP timeout override defaults to 3600 seconds because the installed Cursor SDK has a 60-second MCP request default that is too short for some local MCP tools, including bridged pi tools and configured Cursor MCP servers. `PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1` is off by default and emits typed, allowlisted, scrubbed single-line JSONL records to `process.stderr`. These records are operational diagnostics, not anonymous telemetry: they intentionally include tool names, safe correlation IDs, bridge run state, exposed pi↔MCP name pairs, queued requests, result resolution, rejection, cancellation, and pending counts. They must not include endpoint URLs, endpoint path components, endpoint tokens, raw args/results, stdout/stderr payloads, file contents, Cursor settings output, API keys, bearer tokens, cookies, session credentials, or secrets. Do not enable or share bridge debug logs where tool names themselves are sensitive.
-
-### Maintainer live smoke release gate
-
-For Cursor provider/runtime changes, follow the manual [Cursor live smoke checklist](docs/cursor-live-smoke-checklist.md) before release. See [Cursor testing lessons](docs/cursor-testing-lessons.md) for auth.json seeding, isolated `/tmp` harness layout, JSONL replay-error scans, and other regression traps. Assume every runtime surface is in scope. The checklist uses real `pi -e . --model cursor/composer-2.5` runs with temporary session dirs and requires the visible TUI/output, scrubbed diagnostics, and persisted JSONL to agree. Do not mark a release ready with optional, deferred, mostly-passing, or unobserved smoke checks outstanding.
-
-## Fallback models
-
-If no key is available from `/login`, `CURSOR_API_KEY`, or `--api-key`, model discovery fails, or discovery returns no models, the extension registers a bundled fallback snapshot of the latest reviewed Cursor SDK model catalog and notifies interactive users when possible.
-
-The fallback snapshot includes Composer 2.5 (`composer-2.5` and `composer-2-5`), Composer 2, GPT, Claude, Gemini, Grok, Kimi, and other model IDs exposed by the reviewed `Cursor.models.list()` output. The exact checked-in snapshot lives in `src/cursor-fallback-models.generated.ts`.
-
-Actual Cursor runs still need a key from `/login`, `CURSOR_API_KEY`, or `--api-key`. If you add auth after startup, run `/cursor-refresh-models` to refresh the full live Cursor model catalog without restarting pi.
+Details: [docs/cursor-native-tool-replay.md](docs/cursor-native-tool-replay.md).
 
 ## Limits
 
-- **Local Cursor SDK agents only.** This extension does not use Cursor cloud agents. Cloud pi tool bridging is out of scope because it needs a separate auth, transport, lifetime, and remote trust design.
-- **The pi tool bridge is local and MCP-backed.** Bridgeable active pi tools are exposed to local Cursor agents through a tokenized `127.0.0.1` MCP endpoint; internal Cursor replay activity names are excluded, and overlapping built-in pi tools are hidden by default. Set `PI_CURSOR_PI_TOOL_BRIDGE=0` to disable it or `PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1` to expose overlapping built-ins too.
-- **Cursor native tool replay is display-only.** Replay renders recorded Cursor SDK activity and never re-runs Cursor-side commands, reapplies Cursor edits, calls MCP servers, or mutates pi state. Workflow tools such as Cursor `SwitchMode` and Cursor todo state are not pi workflow controls. See [Cursor native tool replay](docs/cursor-native-tool-replay.md) for supported replay cards, ordering, conflict handling, and opt-out flags. Compact one-line OpenCode-style replay rows are opt-in via `cursorCompactToolDisplay` in `~/.pi/agent/settings.json` (or `/cursor-settings`); `PI_CURSOR_COMPACT_TOOL_DISPLAY=1` overrides for one-off sessions. Compact display applies only to Cursor SDK sessions; non-Cursor models keep pi's default tool UI.
-- **Cursor run state can span tool-use turns.** Within a pi session, the extension reuses one Cursor SDK agent across compatible follow-up turns and sends incremental prompts when context still matches. It recreates the agent when context diverges, after compaction or `/tree` navigation, on API key changes, after send errors, or on session shutdown. For bridged pi tools, the matching pi `toolResult` resolves into the same live Cursor SDK run without creating a new `Agent`, unless the run was disposed, aborted, or cancelled. Replay can also split one live Cursor SDK run across pi `toolUse` turns for display.
-- **Cursor setting sources default to all.** The extension passes `local.settingSources: ["all"]` by default so configured Cursor MCP servers, plugin tools, project/user settings, and related Cursor-native capabilities are available like they are in Cursor. To narrow loading, set a comma-separated list such as `PI_CURSOR_SETTING_SOURCES=project,user,plugins`. To disable ambient setting sources, set `PI_CURSOR_SETTING_SOURCES=none`. Direct Cursor SDK bootstrap logs (settings, skills, hook-load compatibility warnings, and similar) are suppressed so they do not pollute the TUI.
-- **Max Mode is not a manual pi variant.** Cursor's SDK may enable Max Mode automatically for models that require it. This extension only advertises exact context-window variants that the SDK catalog exposes and otherwise uses conservative SDK-derived default/non-Max context windows.
-- **Output token limits are conservative.** Cursor SDK model metadata does not currently expose output token limits directly.
-- **Token usage is approximate in pi.** Cursor SDK usage events include cumulative internal agent/tool/cache work, so raw Cursor SDK counters are not copied into pi usage. The extension reports approximate pi session activity in `input`/`output`, including split-run tool calls and consumed tool results, while `totalTokens` tracks the replayable Cursor prompt/context estimate used for context display and compaction.
+- Local Cursor SDK agents only (no cloud agents).
+- Fallback model snapshot when discovery cannot authenticate; live runs still need a key.
+- Cursor setting sources default to `all`; bootstrap noise is filtered from the TUI.
+- Token usage in pi is approximate; see [docs/cursor-model-ux-spec.md](docs/cursor-model-ux-spec.md) for accounting policy.
 
 ## Troubleshooting
 
-### I can see Cursor models, but runs fail
-
-You may be seeing fallback startup models or a missing/invalid key. In interactive pi, run `/login`, choose `Use an API key`, choose `Cursor`, paste the key, then run `/cursor-refresh-models`.
-
-You can also restart pi with a key in the same shell or launcher that starts pi:
-
-```bash
-export CURSOR_API_KEY="your-key"
-pi --model cursor/composer-2.5
-```
-
-Or run a one-shot command:
-
-```bash
-pi --api-key "your-key" --model cursor/composer-2.5 -p "Say ok only"
-```
-
-### `pi --list-models cursor` shows no Cursor models
-
-Confirm the package is installed:
-
-```bash
-pi list
-```
-
-Then reinstall if needed:
-
-```bash
-pi install npm:pi-cursor-sdk
-```
-
-### `pi --list-models` shows `thinking=no`
-
-That does not mean the model cannot think. It means the Cursor SDK does not expose a pi-controllable thinking parameter for that model. The model may still think internally and may still emit thinking deltas that pi renders natively.
-
-### How do I use fast mode?
-
-Select a `-fast` model variant, for example `cursor/composer-2.5-fast` or `cursor/gpt-5.5@1m-fast`. Fast mode is shown as part of the selected model in pi's footer, not as a separate extension status line.
-
-### My Cursor app settings or rules do not seem to apply
-
-Cursor setting sources are loaded with `PI_CURSOR_SETTING_SOURCES=all` by default. To narrow loading, set `PI_CURSOR_SETTING_SOURCES=project,user,plugins` or another comma-separated list. If you explicitly disabled sources with `PI_CURSOR_SETTING_SOURCES=none`, remove that override.
-
-### Cursor does not call my web search MCP/tool
-
-Cursor SDK local agents load MCP servers from Cursor setting sources and inline SDK config. This extension enables all Cursor setting sources by default, so a missing web search tool usually means it is not configured in Cursor or the run was started with a narrowing/disable override such as `PI_CURSOR_SETTING_SOURCES=none`.
-
-### Cursor does not call my pi extension tool
-
-The local pi bridge only exposes tools that are active in the current pi session and present in pi's tool registry at Cursor run start. By default, it does not expose overlapping pi tool names that Cursor already has native equivalents for (`read`, `bash`, `write`, `edit`, `grep`, `find`, and `ls`). Opt in if you intentionally want Cursor to see both the Cursor-native tool and an overlapping built-in pi tool:
-
-```bash
-PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1 pi --model cursor/composer-2.5
-```
-
-To disable the bridge for rollback or isolation, start pi with:
-
-```bash
-PI_CURSOR_PI_TOOL_BRIDGE=0 pi --model cursor/composer-2.5
-```
-
-### A Cursor MCP tool times out
-
-The extension raises Cursor SDK's MCP tool-call timeout from 60 seconds to 3600 seconds by default for Cursor SDK MCP `callTool` requests, including the local pi bridge and configured Cursor MCP servers. For longer local MCP tools, set one override:
-
-```bash
-PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS=7200 pi --model cursor/composer-2.5
-PI_CURSOR_MCP_TOOL_TIMEOUT_MS=7200000 pi --model cursor/composer-2.5
-```
-
-### Cursor native tool cards conflict with another extension
-
-Cursor native replay is a UI enhancement for interactive TTY sessions. See [Cursor native tool replay](docs/cursor-native-tool-replay.md) for conflict behavior and opt-out flags.
+| Symptom | Fix |
+| --- | --- |
+| Models listed but runs fail | `/login` with Cursor key, then `/cursor-refresh-models` |
+| No Cursor models | `pi list` — reinstall if missing |
+| Cursor app rules/MCP missing | Check `PI_CURSOR_SETTING_SOURCES` is not `none` |
+| Pi extension tool not called | Tool must be active in session; set `PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1` for overlapping built-ins |
+| MCP timeout | Default raised to 3600s; override with `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` |
 
 ## Development
 
-Run checks:
-
 ```bash
+pnpm install
 npm test
 npm run typecheck
-```
-
-Refresh the reviewable Cursor fallback catalog before releases or after Cursor model changes:
-
-```bash
-CURSOR_API_KEY="your-key" npm run refresh:cursor-snapshots -- --write
-```
-
-Refresh the bundled default/non-Max context-window snapshot only when checkpoint-derived context windows have been collected from live local runs:
-
-```bash
-CURSOR_API_KEY="your-key" npm run refresh:cursor-snapshots -- --write \
-  --context-windows ~/.pi/agent/cursor-sdk-context-windows.json
-```
-
-The refresh script writes public model metadata only and scrubs known auth material from SDK errors. It must not be run with shell tracing that would echo API keys.
-
-Local development run:
-
-```bash
-npm install
 CURSOR_API_KEY="your-key" pi -e . --model cursor/composer-2.5
 ```
 
-Maintainer design notes live in [`docs/cursor-model-ux-spec.md`](docs/cursor-model-ux-spec.md).
+Maintainer docs: [docs/README.md](docs/README.md).
 
 ## License
 

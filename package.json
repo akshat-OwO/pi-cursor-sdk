@@ -30,6 +30,8 @@
 		"scripts/isolated-cursor-smoke.sh",
 		"scripts/validate-smoke-jsonl.mjs",
 		"README.md",
+		"docs/README.md",
+		"docs/options.md",
 		"docs/cursor-model-ux-spec.md",
 		"docs/cursor-live-smoke-checklist.md",
 		"docs/cursor-testing-lessons.md",

@@ -1,6 +1,6 @@
 # Cursor Model UX Spec
 
-> Maintainer note: this is an internal design and behavior spec for pi-cursor-sdk. If you are trying to install or use the extension, start with the main [README](../README.md) instead.
+> Maintainer note: internal design spec. Users: [README](../README.md) and [options.md](options.md).
 
 ## Status
 
