@@ -24,7 +24,6 @@ import {
 } from "./cursor-native-tool-display-replay.js";
 import {
 	type CompactNativeToolName,
-	isCompactNativeCursorToolName,
 	renderCompactFileMutationResult,
 	renderCompactNativeToolCall,
 	renderCompactNativeToolResult,
@@ -33,6 +32,9 @@ import {
 	consumeCursorNativeToolDisplay,
 	isCursorFileMutationToolName,
 	isCursorReplayToolCallId,
+	registeredNativeToolDefinitions,
+	shouldUseCompactNativeCursorToolDisplay,
+	syncCompactNativeToolDisplayShells,
 } from "./cursor-native-tool-display-state.js";
 
 const CURSOR_MODEL_ACTIVE_REPLAY_TOOL_NAMES = [CURSOR_REPLAY_ACTIVITY_TOOL_NAME] as const;
@@ -48,10 +50,8 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 	definition: ToolDefinition<TParams, TDetails, TState>,
 	getCurrentDefinition: () => ToolDefinition<TParams, TDetails, TState>,
 ): ToolDefinition<TParams, TDetails, TState> {
-	const compactDisplay = isCompactNativeCursorToolName(definition.name);
 	return {
 		...definition,
-		...(compactDisplay ? { renderShell: "self" as const } : {}),
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const cursorDisplay = consumeCursorNativeToolDisplay(toolCallId);
 			if (cursorDisplay) {
@@ -74,7 +74,8 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 			return getCurrentDefinition().execute(toolCallId, params, signal, onUpdate, ctx);
 		},
 		renderCall(args, theme, context) {
-			if (isCursorFileMutationToolName(definition.name) && isCursorReplayToolCallId(context.toolCallId)) {
+			const compactDisplay = shouldUseCompactNativeCursorToolDisplay(definition.name);
+			if (compactDisplay && isCursorFileMutationToolName(definition.name) && isCursorReplayToolCallId(context.toolCallId)) {
 				return renderNativeLookingCursorFileMutationCall(definition.name, args as Record<string, unknown>, theme, context.isPartial, context.cwd);
 			}
 			if (compactDisplay) {
@@ -84,6 +85,7 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 			return currentRenderCall ? currentRenderCall(args, theme, context) : new Text("", 0, 0);
 		},
 		renderResult(result, options, theme, context) {
+			const compactDisplay = shouldUseCompactNativeCursorToolDisplay(definition.name);
 			const details = asCursorReplayToolDetails(result.details);
 			if (isCursorFileMutationToolName(definition.name) && details?.cursorToolName === definition.name) {
 				if (compactDisplay) {
@@ -130,7 +132,10 @@ export function createNativeCursorToolDefinition(toolName: NativeCursorToolName,
 
 export function registerNativeCursorTool(pi: Pick<import("@earendil-works/pi-coding-agent").ExtensionAPI, "registerTool">, toolName: NativeCursorToolName): void {
 	const definition = createNativeCursorToolDefinition(toolName, getCursorSessionCwd());
-	pi.registerTool(wrapNativeCursorTool(definition, () => createNativeCursorToolDefinition(toolName, getCursorSessionCwd())));
+	const registeredTool = wrapNativeCursorTool(definition, () => createNativeCursorToolDefinition(toolName, getCursorSessionCwd()));
+	registeredNativeToolDefinitions.set(toolName, registeredTool as ToolDefinition<TSchema, unknown, unknown>);
+	pi.registerTool(registeredTool);
+	syncCompactNativeToolDisplayShells();
 }
 
 export { CURSOR_MODEL_ACTIVE_REPLAY_TOOL_NAMES, CURSOR_REPLAY_TOOL_NAMES };

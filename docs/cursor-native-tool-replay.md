@@ -92,7 +92,25 @@ Native replay wrappers are registered for all supported tool names when `PI_CURS
 
 ### Compact read/grep/find display
 
-When pi-cursor-sdk owns the native replay wrappers for `read`, `grep`, `find`, `bash`, `edit`, `write`, `ls`, and Cursor activity replay tools (`cursor`, `cursor_mcp`, `cursor_task`, `cursor_delete`, etc.), those cards use compact one-line call rendering instead of boxed tool shells:
+Compact one-line OpenCode-style tool rows are **off by default** and apply **only to Cursor SDK sessions** (`provider: cursor` / `api: cursor-sdk`). Enable them in `~/.pi/agent/settings.json` (project overrides in `.pi/settings.json`):
+
+```json
+{
+  "cursorCompactToolDisplay": true
+}
+```
+
+Or toggle at runtime with `/cursor-settings` (reloads automatically after you change the setting).
+
+For one-off sessions, you can still use:
+
+```bash
+PI_CURSOR_COMPACT_TOOL_DISPLAY=1 pi --model cursor/composer-2.5
+```
+
+Process environment variables override `cursorCompactToolDisplay` in settings.
+
+When compact display is enabled and pi-cursor-sdk owns the native replay wrappers for `read`, `grep`, `find`, `bash`, `edit`, `write`, `ls`, and Cursor activity replay tools (`cursor`, `cursor_mcp`, `cursor_task`, `cursor_delete`, etc.), those cards use compact one-line call rendering instead of boxed tool shells:
 
 ```
   → Read README.md [limit=80]
@@ -114,7 +132,7 @@ Collapsed output stays hidden until expanded (Ctrl+O or click), except `edit` an
 
 Implementation lives in `src/cursor-compact-tool-display.ts`. The same formatting is mirrored in the optional global pi extension at `~/.pi/agent/extensions/compact-tool-display/` for non-Cursor models.
 
-When `PI_CURSOR_NATIVE_TOOL_DISPLAY=1`, pi-cursor-sdk always registers its native replay wrappers for `read`, `grep`, `find`, `bash`, `edit`, `write`, and `ls`, even if another extension also provides those tool names. **Do not run the global `compact-tool-display` extension alongside pi-cursor-sdk for Cursor models** — both extensions register the same tool names and the last registration wins, which can silently drop compact diff previews or other replay-specific rendering. For Cursor models, remove or disable `~/.pi/agent/extensions/compact-tool-display/` and rely on pi-cursor-sdk's built-in compact display. For all other pi models/providers, use the global extension only.
+When `PI_CURSOR_NATIVE_TOOL_DISPLAY=1`, pi-cursor-sdk always registers its native replay wrappers for `read`, `grep`, `find`, `bash`, `edit`, `write`, and `ls`, even if another extension also provides those tool names. **Do not run the global `compact-tool-display` extension alongside pi-cursor-sdk with `PI_CURSOR_COMPACT_TOOL_DISPLAY=1` for Cursor models** — both extensions register the same tool names and the last registration wins, which can silently drop compact diff previews or other replay-specific rendering. For Cursor models with compact display enabled, remove or disable `~/.pi/agent/extensions/compact-tool-display/` and rely on pi-cursor-sdk's built-in compact display. For all other pi models/providers, use the global extension only.
 
 Disable native replay registration entirely:
 
