@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { CursorPiToolDisplay } from "./cursor-tool-transcript.js";
+import { getCursorCompactToolDisplaySetting } from "./cursor-agent-settings.js";
 import { parseOptionalEnvBoolean } from "./cursor-env-boolean.js";
 import { isCompactCursorReplayToolName, isCompactNativeCursorToolName } from "./cursor-compact-tool-display.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -63,7 +64,9 @@ export function isCursorNativeToolDisplayRequested(): boolean {
 }
 
 export function isCursorCompactToolDisplayRequested(): boolean {
-	return readBooleanEnv(COMPACT_TOOL_DISPLAY_ENV) === true;
+	const envOverride = readBooleanEnv(COMPACT_TOOL_DISPLAY_ENV);
+	if (envOverride !== undefined) return envOverride;
+	return getCursorCompactToolDisplaySetting();
 }
 
 export function isCursorNativeToolRegistrationRequested(): boolean {

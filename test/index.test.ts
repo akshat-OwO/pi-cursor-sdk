@@ -16,7 +16,17 @@ vi.mock("../src/cursor-provider.js", () => ({
 	streamCursor: vi.fn(),
 }));
 
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+	return {
+		...actual,
+		getAgentDir: vi.fn(),
+	};
+});
+
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import extensionFactory from "../src/index.js";
+import { __cursorAgentSettingsTestUtils } from "../src/cursor-agent-settings.js";
 import { discoverModels, loadCachedCursorModels } from "../src/model-discovery.js";
 import { streamCursor } from "../src/cursor-provider.js";
 import {
@@ -31,6 +41,9 @@ import { __testUtils as cursorSessionCwdTestUtils } from "../src/cursor-session-
 const mockedDiscover = vi.mocked(discoverModels);
 const mockedLoadCachedCursorModels = vi.mocked(loadCachedCursorModels);
 const mockedStreamCursor = vi.mocked(streamCursor);
+const mockedGetAgentDir = vi.mocked(getAgentDir);
+
+let agentSettingsDir: string | undefined;
 
 type DiscoverOptions = Parameters<typeof discoverModels>[0];
 type RegisteredTool = ToolDefinition<TSchema, unknown, unknown>;
@@ -149,10 +162,16 @@ function createMockPi(existingTools?: ToolInfo[]) {
 describe("extension factory", () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
+		if (agentSettingsDir) {
+			rmSync(agentSettingsDir, { recursive: true, force: true });
+		}
+		agentSettingsDir = mkdtempSync(join(tmpdir(), "pi-cursor-index-settings-"));
+		mockedGetAgentDir.mockReturnValue(agentSettingsDir);
 		delete process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY;
 		delete process.env.PI_CURSOR_REGISTER_NATIVE_TOOLS;
 		delete process.env.PI_CURSOR_PI_TOOL_BRIDGE;
 		delete process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY;
+		__cursorAgentSettingsTestUtils.reset();
 		await cursorPiToolBridgeTestUtils.resetRegisteredBridgeForTests();
 		cursorSessionCwdTestUtils.reset();
 		nativeToolDisplayTestUtils.reset();
@@ -824,6 +843,7 @@ describe("extension factory", () => {
 
 	it("uses default pi tool shells for native replay when compact display is not enabled", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		process.env.PI_CURSOR_COMPACT_TOOL_DISPLAY = "0";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
 		await extensionFactory(pi);
@@ -834,6 +854,31 @@ describe("extension factory", () => {
 
 		expect(readTool.renderShell).toBeUndefined();
 		expect(cursorTool.renderShell).toBeUndefined();
+	});
+
+	it("enables compact display from cursorCompactToolDisplay in agent settings", async () => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
+		writeFileSync(
+			join(agentSettingsDir!, "settings.json"),
+			JSON.stringify({ cursorCompactToolDisplay: true }),
+		);
+		__cursorAgentSettingsTestUtils.reset();
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		await extensionFactory(pi);
+		await runSessionStartHandlers(pi, {
+			model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"],
+		});
+
+		const readTool = pi._tools.find((tool) => tool.name === "read");
+		expect(readTool.renderShell).toBe("self");
+	});
+
+	it("registers /cursor-settings command", async () => {
+		mockedDiscover.mockResolvedValueOnce([]);
+		const pi = createMockPi();
+		await extensionFactory(pi);
+		expect(pi._commands.has("cursor-settings")).toBe(true);
 	});
 
 	it("does not apply compact display on non-Cursor models even when PI_CURSOR_COMPACT_TOOL_DISPLAY=1", async () => {

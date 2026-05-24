@@ -92,13 +92,25 @@ Native replay wrappers are registered for all supported tool names when `PI_CURS
 
 ### Compact read/grep/find display
 
-Compact one-line OpenCode-style tool rows are **off by default** and apply **only to Cursor SDK sessions** (`provider: cursor` / `api: cursor-sdk`). Enable them with:
+Compact one-line OpenCode-style tool rows are **off by default** and apply **only to Cursor SDK sessions** (`provider: cursor` / `api: cursor-sdk`). Enable them in `~/.pi/agent/settings.json` (project overrides in `.pi/settings.json`):
+
+```json
+{
+  "cursorCompactToolDisplay": true
+}
+```
+
+Or toggle at runtime with `/cursor-settings`.
+
+For one-off sessions, you can still use:
 
 ```bash
 PI_CURSOR_COMPACT_TOOL_DISPLAY=1 pi --model cursor/composer-2.5
 ```
 
-When `PI_CURSOR_COMPACT_TOOL_DISPLAY=1` and pi-cursor-sdk owns the native replay wrappers for `read`, `grep`, `find`, `bash`, `edit`, `write`, `ls`, and Cursor activity replay tools (`cursor`, `cursor_mcp`, `cursor_task`, `cursor_delete`, etc.), those cards use compact one-line call rendering instead of boxed tool shells:
+Process environment variables override `cursorCompactToolDisplay` in settings.
+
+When compact display is enabled and pi-cursor-sdk owns the native replay wrappers for `read`, `grep`, `find`, `bash`, `edit`, `write`, `ls`, and Cursor activity replay tools (`cursor`, `cursor_mcp`, `cursor_task`, `cursor_delete`, etc.), those cards use compact one-line call rendering instead of boxed tool shells:
 
 ```
   → Read README.md [limit=80]
