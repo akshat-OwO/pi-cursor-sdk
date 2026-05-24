@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { discoverModels, type CursorModelFallbackIssue } from "./model-discovery.js";
+import { discoverModels, loadCachedCursorModels, type CursorModelFallbackIssue } from "./model-discovery.js";
 import { registerCursorFastControls } from "./cursor-state.js";
 import { registerCursorNativeToolDisplay } from "./cursor-native-tool-display.js";
 import { registerCursorPiToolBridge } from "./cursor-pi-tool-bridge.js";
@@ -47,7 +47,7 @@ export default async function (pi: CursorExtensionApi) {
 	registerCursorQuestionTool(pi);
 	registerCursorPiToolBridge(pi);
 	let fallbackIssue: CursorModelFallbackIssue | undefined;
-	const models = await discoverModels({
+	const models = loadCachedCursorModels() ?? await discoverModels({
 		onFallback: (issue) => {
 			fallbackIssue = issue;
 		},

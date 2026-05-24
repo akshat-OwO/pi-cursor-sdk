@@ -8,6 +8,7 @@ import { Type, type TSchema } from "typebox";
 
 vi.mock("../src/model-discovery.js", () => ({
 	discoverModels: vi.fn(),
+	loadCachedCursorModels: vi.fn(),
 	getCursorModelMetadata: vi.fn(),
 }));
 
@@ -16,7 +17,7 @@ vi.mock("../src/cursor-provider.js", () => ({
 }));
 
 import extensionFactory from "../src/index.js";
-import { discoverModels } from "../src/model-discovery.js";
+import { discoverModels, loadCachedCursorModels } from "../src/model-discovery.js";
 import { streamCursor } from "../src/cursor-provider.js";
 import {
 	__testUtils as nativeToolDisplayTestUtils,
@@ -28,6 +29,7 @@ import { CURSOR_ASK_QUESTION_TOOL_NAME } from "../src/cursor-question-tool.js";
 import { __testUtils as cursorSessionCwdTestUtils } from "../src/cursor-session-cwd.js";
 
 const mockedDiscover = vi.mocked(discoverModels);
+const mockedLoadCachedCursorModels = vi.mocked(loadCachedCursorModels);
 const mockedStreamCursor = vi.mocked(streamCursor);
 
 type DiscoverOptions = Parameters<typeof discoverModels>[0];
@@ -153,6 +155,7 @@ describe("extension factory", () => {
 		await cursorPiToolBridgeTestUtils.resetRegisteredBridgeForTests();
 		cursorSessionCwdTestUtils.reset();
 		nativeToolDisplayTestUtils.reset();
+		mockedLoadCachedCursorModels.mockReturnValue(undefined);
 	});
 
 	it("registers Cursor fast controls and one provider with correct fields", async () => {
@@ -236,6 +239,28 @@ describe("extension factory", () => {
 		expect(call.config.api).toBe("cursor-sdk");
 		expect(call.config.models).toBe(mockModels);
 		expect(call.config.streamSimple).toBe(mockedStreamCursor);
+	});
+
+	it("registers cached Cursor models without blocking on live discovery", async () => {
+		const cachedModels = [
+			{
+				id: "composer-2",
+				name: "Cursor Composer 2",
+				reasoning: false,
+				input: ["text", "image"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 128000,
+				maxTokens: 16384,
+			},
+		];
+		mockedLoadCachedCursorModels.mockReturnValueOnce(cachedModels);
+
+		const pi = createMockPi();
+		await extensionFactory(pi);
+
+		expect(mockedDiscover).not.toHaveBeenCalled();
+		expect(pi.registerProvider).toHaveBeenCalledOnce();
+		expect(pi._registered[0].config.models).toBe(cachedModels);
 	});
 
 	it("keeps legacy Cursor replay-only tools out of active tools", async () => {

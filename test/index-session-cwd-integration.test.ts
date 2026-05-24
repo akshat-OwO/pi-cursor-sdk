@@ -10,6 +10,7 @@ vi.mock("../src/model-discovery.js", async (importOriginal) => {
 	return {
 		...actual,
 		discoverModels: vi.fn(),
+		loadCachedCursorModels: vi.fn(),
 	};
 });
 
@@ -45,12 +46,13 @@ vi.mock("@cursor/sdk", () => ({
 import { Agent } from "@cursor/sdk";
 import type { AssistantMessageEventStream } from "@earendil-works/pi-ai";
 import extensionFactory from "../src/index.js";
-import { discoverModels } from "../src/model-discovery.js";
+import { discoverModels, loadCachedCursorModels } from "../src/model-discovery.js";
 import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
 import { __testUtils as cursorSessionCwdTestUtils } from "../src/cursor-session-cwd.js";
 import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/cursor-pi-tool-bridge.js";
 
 const mockedDiscover = vi.mocked(discoverModels);
+const mockedLoadCachedCursorModels = vi.mocked(loadCachedCursorModels);
 const mockedAgentCreate = vi.mocked(Agent.create);
 
 type TestExtensionContext = Pick<ExtensionContext, "cwd" | "hasUI"> & {
@@ -136,6 +138,7 @@ describe("extension session cwd integration", () => {
 		delete process.env.PI_CURSOR_SETTING_SOURCES;
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(0);
 		cursorSessionCwdTestUtils.reset();
+		mockedLoadCachedCursorModels.mockReturnValue(undefined);
 		mockedAgentCreate.mockResolvedValue(createMockAgent());
 		mockedDiscover.mockResolvedValue([
 			{

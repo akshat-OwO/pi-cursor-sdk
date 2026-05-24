@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
 	discoverModels,
+	loadCachedCursorModels,
 	buildCursorModelSelection,
 	getCursorModelMetadata,
 	getCursorModelMetadataEntries,
@@ -113,6 +114,46 @@ describe("discoverModels", () => {
 
 		expect(mockedList).toHaveBeenCalledWith({ apiKey: "cli-key-123" });
 		expect(models.map((model) => model.id)).toEqual(["composer-2"]);
+	});
+
+	it("writes a successful live Cursor model catalog to the agent cache", async () => {
+		process.argv = ["node", "pi", "--api-key", "cli-key-123"];
+		mockedList.mockResolvedValueOnce([
+			{
+				id: "composer-2",
+				displayName: "Composer 2",
+				variants: [{ params: [], displayName: "Composer 2", isDefault: true }],
+			},
+		]);
+
+		await discoverModels();
+
+		const cachePath = __testUtils.getModelCatalogCachePath();
+		expect(existsSync(cachePath)).toBe(true);
+		const cache = JSON.parse(readFileSync(cachePath, "utf-8")) as { version?: number; models?: Array<{ id?: string }> };
+		expect(cache.version).toBe(1);
+		expect(cache.models?.map((model) => model.id)).toEqual(["composer-2"]);
+	});
+
+	it("loads cached Cursor models without calling the live Cursor catalog", () => {
+		writeFileSync(
+			__testUtils.getModelCatalogCachePath(),
+			JSON.stringify({
+				version: 1,
+				models: [
+					{
+						id: "composer-2",
+						displayName: "Composer 2",
+						variants: [{ params: [], displayName: "Composer 2", isDefault: true }],
+					},
+				],
+			}),
+		);
+
+		const models = loadCachedCursorModels();
+
+		expect(mockedList).not.toHaveBeenCalled();
+		expect(models?.map((model) => model.id)).toEqual(["composer-2"]);
 	});
 
 	it("uses stored pi auth for model discovery when env and CLI are absent", async () => {

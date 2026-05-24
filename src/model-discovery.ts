@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Cursor } from "@cursor/sdk";
 import type {
 	ModelListItem,
@@ -5,7 +7,7 @@ import type {
 	ModelParameterValue,
 	ModelSelection,
 } from "@cursor/sdk";
-import { AuthStorage, type ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import { AuthStorage, getAgentDir, type ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ModelThinkingLevel, ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { loadContextWindowCache } from "./context-window-cache.js";
 import { FALLBACK_MODEL_ITEMS } from "./cursor-fallback-models.generated.js";
@@ -19,6 +21,12 @@ const TEXT_AND_IMAGE_INPUT: ProviderModelConfig["input"] = ["text", "image"];
 const AUTH_SETUP_HINT = "/login (Use an API key -> Cursor), CURSOR_API_KEY, or --api-key";
 const CATALOG_REFRESH_HINT =
 	"After adding auth to an already-started pi session, run /cursor-refresh-models to refresh the full live Cursor model catalog without restarting pi.";
+const MODEL_CATALOG_CACHE_FILE = "cursor-sdk-model-catalog.json";
+
+interface CursorModelCatalogCacheFile {
+	version?: number;
+	models?: unknown;
+}
 
 export type CursorModelFallbackReason = "missing-api-key" | "discovery-failed" | "empty-model-list";
 
@@ -440,6 +448,51 @@ function useFallbackModels(options: DiscoverModelsOptions, issue: CursorModelFal
 	return registerModelItems(FALLBACK_MODEL_ITEMS);
 }
 
+function getModelCatalogCachePath(): string {
+	return join(getAgentDir(), MODEL_CATALOG_CACHE_FILE);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCachedModelListItem(value: unknown): value is ModelListItem {
+	return isRecord(value) && typeof value.id === "string" && value.id.trim().length > 0;
+}
+
+function readCachedModelItems(): ModelListItem[] | undefined {
+	const path = getModelCatalogCachePath();
+	if (!existsSync(path)) return undefined;
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf-8")) as CursorModelCatalogCacheFile;
+		if (parsed.version !== 1 || !Array.isArray(parsed.models)) return undefined;
+		const models = parsed.models.filter(isCachedModelListItem);
+		return models.length > 0 ? models : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function saveCachedModelItems(models: ModelListItem[]): void {
+	if (models.length === 0) return;
+	const path = getModelCatalogCachePath();
+	const data = {
+		version: 1,
+		models,
+	};
+	try {
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+	} catch {
+		// Cache failures should not block provider registration or model refresh.
+	}
+}
+
+export function loadCachedCursorModels(): ProviderModelConfig[] | undefined {
+	const models = readCachedModelItems();
+	return models ? registerModelItems(models) : undefined;
+}
+
 export async function discoverModels(options: DiscoverModelsOptions = {}): Promise<ProviderModelConfig[]> {
 	const apiKey = await getDiscoveryApiKey();
 	if (!apiKey) {
@@ -452,6 +505,7 @@ export async function discoverModels(options: DiscoverModelsOptions = {}): Promi
 	try {
 		const models = await Cursor.models.list({ apiKey });
 		if (models.length > 0) {
+			saveCachedModelItems(models);
 			return registerModelItems(models);
 		}
 		return useFallbackModels(options, {
@@ -473,4 +527,5 @@ export const __testUtils = {
 	registerModelItems,
 	getCliApiKeyFromArgv,
 	normalizeApiKey,
+	getModelCatalogCachePath,
 };
