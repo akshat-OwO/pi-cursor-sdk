@@ -34,19 +34,39 @@ function createCursorProviderConfig(models: ProviderModelConfig[]): ProviderConf
 	};
 }
 
+function isStaleExtensionContextError(error: unknown): boolean {
+	return error instanceof Error && error.message.includes("extension ctx is stale");
+}
+
 function registerCursorProvider(pi: Pick<ExtensionAPI, "registerProvider">, models: ProviderModelConfig[]): void {
 	pi.registerProvider("cursor", createCursorProviderConfig(models));
 }
 
-function scheduleBackgroundModelRefresh(pi: Pick<ExtensionAPI, "registerProvider">): void {
+function registerCursorProviderSafely(pi: Pick<ExtensionAPI, "registerProvider">, models: ProviderModelConfig[]): boolean {
+	try {
+		registerCursorProvider(pi, models);
+		return true;
+	} catch (error) {
+		if (isStaleExtensionContextError(error)) return false;
+		throw error;
+	}
+}
+
+function scheduleBackgroundModelRefresh(
+	pi: Pick<ExtensionAPI, "registerProvider" | "on">,
+): void {
+	let cancelled = false;
+	pi.on("session_shutdown", () => {
+		cancelled = true;
+	});
 	let usedFallback = false;
 	void discoverModels({
 		onFallback: () => {
 			usedFallback = true;
 		},
 	}).then((refreshedModels) => {
-		if (usedFallback) return;
-		registerCursorProvider(pi, refreshedModels);
+		if (usedFallback || cancelled) return;
+		registerCursorProviderSafely(pi, refreshedModels);
 	});
 }
 
@@ -86,7 +106,7 @@ export default async function (pi: CursorExtensionApi) {
 					refreshFallbackIssue = issue;
 				},
 			});
-			registerCursorProvider(pi, refreshedModels);
+			if (!registerCursorProviderSafely(pi, refreshedModels)) return;
 			if (!ctx.hasUI) return;
 			if (refreshFallbackIssue) {
 				ctx.ui.notify(`Cursor model catalog refresh still using fallback models: ${refreshFallbackIssue.message}`, "warning");
