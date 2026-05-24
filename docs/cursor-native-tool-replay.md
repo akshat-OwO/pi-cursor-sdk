@@ -100,7 +100,7 @@ Compact one-line OpenCode-style tool rows are **off by default** and apply **onl
 }
 ```
 
-Or toggle at runtime with `/cursor-settings`.
+Or toggle at runtime with `/cursor-settings` (reloads automatically after you change the setting).
 
 For one-off sessions, you can still use:
 

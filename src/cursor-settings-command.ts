@@ -1,11 +1,10 @@
 import { Container, SettingsList, Text } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import {
 	getCursorCompactToolDisplaySetting,
 	setCursorCompactToolDisplaySetting,
 } from "./cursor-agent-settings.js";
-import { syncCompactNativeToolDisplayShells } from "./cursor-native-tool-display-state.js";
 
 type CursorSettingsExtensionApi = Pick<ExtensionAPI, "registerCommand">;
 
@@ -49,13 +48,14 @@ class CursorSettingsPanel extends Container {
 export function registerCursorSettingsCommand(pi: CursorSettingsExtensionApi): void {
 	pi.registerCommand("cursor-settings", {
 		description: "Configure pi-cursor-sdk display options",
-		handler: async (_args, ctx: ExtensionContext) => {
+		handler: async (_args, ctx: ExtensionCommandContext) => {
 			if (!ctx.hasUI) {
 				const enabled = getCursorCompactToolDisplaySetting(ctx.cwd);
 				ctx.ui.notify(`Compact tool display: ${enabled ? "on" : "off"}`, "info");
 				return;
 			}
 
+			let shouldReload = false;
 			await ctx.ui.custom<void>((_tui, _theme, _keybindings, done) => {
 				let enabled = getCursorCompactToolDisplaySetting(ctx.cwd);
 				return new CursorSettingsPanel(
@@ -63,12 +63,20 @@ export function registerCursorSettingsCommand(pi: CursorSettingsExtensionApi): v
 					(nextEnabled) => {
 						enabled = nextEnabled;
 						setCursorCompactToolDisplaySetting(nextEnabled, ctx.cwd);
-						syncCompactNativeToolDisplayShells();
-						ctx.ui.notify(`Compact tool display ${nextEnabled ? "enabled" : "disabled"}`, "info");
+						ctx.ui.notify(
+							`Compact tool display ${nextEnabled ? "enabled" : "disabled"}. Reloading…`,
+							"info",
+						);
+						shouldReload = true;
+						done();
 					},
 					() => done(),
 				);
 			});
+
+			if (shouldReload) {
+				await ctx.reload();
+			}
 		},
 	});
 }
