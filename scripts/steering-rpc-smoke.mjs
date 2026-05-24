@@ -135,7 +135,7 @@ async function terminateChild(child) {
 }
 
 async function runPiRpcSmoke(sessionDir) {
-	const args = ["-e", root, "--cursor-no-fast", "--model", "cursor/composer-2.5", "--mode", "rpc", "--session-dir", sessionDir];
+	const args = ["-e", root, "--model", "cursor/composer-2.5", "--mode", "rpc", "--session-dir", sessionDir];
 	const env = {
 		...process.env,
 		PI_CURSOR_SETTING_SOURCES: "none",

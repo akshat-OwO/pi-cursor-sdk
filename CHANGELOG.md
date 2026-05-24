@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Breaking:** Replace Cursor fast extension state with pi model variants. Models that expose Cursor `fast` now register both `cursor/<id>` (`fast=false`) and `cursor/<id>-fast` (`fast=true`). Context-qualified models follow the same pattern, for example `cursor/gpt-5.5@1m-fast`.
+- Remove `/cursor-fast`, `--cursor-fast`, and `--cursor-no-fast`, plus saved fast defaults in `~/.pi/agent/cursor-sdk.json`. Select fast mode through native pi model selection instead.
+- Update README, UX spec, smoke scripts, and maintainer docs for the new fast model variant contract.
+
 ## 0.1.18 - 2026-05-23
 
 ### Added

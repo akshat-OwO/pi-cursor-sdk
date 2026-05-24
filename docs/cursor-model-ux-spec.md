@@ -10,12 +10,11 @@ Current implementation notes:
 
 - Cursor context variants use `base@context` pi model IDs.
 - Cursor `reasoning`, `effort`, and boolean `thinking` parameters are driven by pi native thinking when the Cursor SDK exposes those controls.
-- Cursor `fast` is extension state, not model identity.
-- Cursor fast status uses `ctx.ui.setStatus()`; the default pi footer remains intact.
+- Cursor `fast` is a pi model variant with a `-fast` suffix, not extension state or footer status.
 - Installed `@cursor/sdk` user messages accept images, and Cursor models are treated as image-capable; registered input metadata is `text` plus `image`.
 - Image payload forwarding sends images only from the latest user message. If the latest user turn is plain text after an earlier image turn, the transcript keeps an `[image omitted from transcript]` placeholder but no image bytes are sent to Cursor. The prompt explicitly tells Cursor that prior image bytes are unavailable and to ask the user to reattach or describe a prior image when needed. Carrying images forward across turns remains a future product decision because it affects token cost, privacy, stale visual context, and expected multimodal follow-up behavior.
 - `@cursor/sdk` is a package dependency of this extension; users should not need a global SDK install.
-- Cursor auth uses pi-native API-key resolution for provider `cursor`: CLI `--api-key`, stored `~/.pi/agent/auth.json` API key from `/login`, then `CURSOR_API_KEY`. The extension config file stores only non-secret Cursor-only state such as fast defaults.
+- Cursor auth uses pi-native API-key resolution for provider `cursor`: CLI `--api-key`, stored `~/.pi/agent/auth.json` API key from `/login`, then `CURSOR_API_KEY`. The extension config file is reserved for other non-secret extension state when needed; fast mode is not stored there.
 - Local agents pass `settingSources: ["all"]` by default so Cursor MCP servers, plugin tools, project/user settings, and related Cursor-native capabilities are available. Users can narrow loading with a comma-separated list such as `PI_CURSOR_SETTING_SOURCES=project,user,plugins`, or disable ambient setting sources with `PI_CURSOR_SETTING_SOURCES=none`. The provider suppresses direct Cursor SDK bootstrap stdout/stderr/console noise (including late first-send workspace loading such as hook compatibility warnings) so it does not pollute pi's TUI.
 - Cursor SDK models are treated as thinking-capable even when pi reports `thinking=no`; that pi column only means the SDK did not expose a pi-controllable thinking parameter for that model.
 - Cursor-side thinking remains visible through pi's native thinking rendering when the Cursor SDK emits thinking or summary deltas.
@@ -32,10 +31,10 @@ Current implementation notes:
 - Cursor SDK usage events report cumulative internal agent/tool/cache work, not the replayable pi prompt context. The extension does not copy raw Cursor SDK usage into pi usage or compaction. For Cursor assistant messages, `usage.input`/`usage.output` are approximate pi session activity components: initial Cursor prompt input is counted once, consumed split-run tool results are counted as deduped input on the following assistant turn, and assistant output includes visible text/thinking/tool-call content. `usage.totalTokens` is the replayable Cursor prompt/context estimate derived from the same `buildCursorPrompt()` path used for `Agent.send`; it may differ from `input + output` and is the context-safe value for display/compaction. `src/cursor-usage-accounting.ts` owns this usage policy, and `src/cursor-live-run-accounting.ts` owns prompt-once and consumed-tool-result accounting so provider usage and bridge result resolution share the same matched tool-result boundary.
 - Audit observation, 2026-05-19, superseded by the 2026-05-21 replay pass: a missing-file read with Composer 2.5 emitted `tool-call-started` for Cursor `read`, then streamed final text `Error: File not found`, but did not emit `tool-call-completed` or an `onStep` `toolCall` error result. Leftover started calls are now discarded at run completion instead of becoming synthetic replay errors. Cursor-reported completed/step errors remain visible.
 - Maintainer visual verification for replay-card changes should follow [Cursor Native Tool Visual Audit Workflow](./cursor-native-tool-visual-audit.md): offscreen PTY-driven pi run, xterm.js/Playwright screenshot rendering, and JSONL inspection before accepting commits or PRs.
-- Cursor provider/runtime releases should follow [Cursor Live Smoke Checklist](./cursor-live-smoke-checklist.md) with real `pi -e . --cursor-no-fast --model cursor/composer-2.5` invocations, manual observation, temporary session dirs, diagnostics scans, and persisted JSONL inspection. See [Cursor testing lessons](./cursor-testing-lessons.md) for auth.json seeding, isolated smoke harnesses, and replay JSONL scans. Assume every runtime surface is in scope. A release is not ready when any live check is optional, deferred, mostly passing, or unobserved.
+- Cursor provider/runtime releases should follow [Cursor Live Smoke Checklist](./cursor-live-smoke-checklist.md) with real `pi -e . --model cursor/composer-2.5` invocations, manual observation, temporary session dirs, diagnostics scans, and persisted JSONL inspection. See [Cursor testing lessons](./cursor-testing-lessons.md) for auth.json seeding, isolated smoke harnesses, and replay JSONL scans. Assume every runtime surface is in scope. A release is not ready when any live check is optional, deferred, mostly passing, or unobserved.
 - For models without a catalog `context` parameter, context windows are not hardcoded. The extension ships a bundled SDK-derived default/non-Max cache generated from `createAgentPlatform().checkpointStore.loadLatest(agentId).tokenDetails.maxTokens`. Successful runs can update a local override cache, but model discovery does not probe models at startup.
 - Max Mode context windows are distinct from default/non-Max context windows. `@cursor/sdk` 1.0.13 documentation says the SDK may enable Max Mode automatically when a selected model requires it, but the public local-agent `ModelSelection` path still does not expose a manual Max Mode selector. Do not advertise Max Mode context windows unless the SDK catalog exposes an exact parameter/variant or the SDK public API adds a Max Mode selector that the extension actually sends.
-- `@cursor/sdk` 1.0.13 adds latest-style `ModelListItem.aliases`. The extension registers only unambiguous aliases as pi model IDs (with the same context suffixes when applicable) and sends the alias back in `ModelSelection.id`, while sharing Cursor-only state such as fast defaults with the underlying catalog `id`. Aliases shared by multiple base models, such as generic family aliases, are skipped because the pi row metadata would otherwise imply one base model while Cursor may resolve the alias to another.
+- `@cursor/sdk` 1.0.13 adds latest-style `ModelListItem.aliases`. The extension registers only unambiguous aliases as pi model IDs (with the same context and `-fast` suffixes when applicable) and sends the alias back in `ModelSelection.id`. Aliases shared by multiple base models, such as generic family aliases, are skipped because the pi row metadata would otherwise imply one base model while Cursor may resolve the alias to another.
 - Session-scoped Cursor SDK agent pooling reuses one live `@cursor/sdk` agent across compatible follow-up turns within the same pi session scope. `computeCursorContextFingerprint()` and `shouldBootstrapCursorSend()` decide whether the next turn sends a full bootstrap prompt or an incremental follow-up. The pool recreates the agent when context diverges, when branch or compaction summaries appear after `/tree` navigation or compaction, when the API key identity changes, after send errors, on `session_shutdown`, and when `session_before_tree` / `session_tree` invalidate the active branch. Incremental sends omit the full Cursor SDK tool boundary block because the session agent retains prior bootstrap context.
 - Pi steering/follow-up delivery can arrive while a split live Cursor SDK run is still active. The provider resolves pending live runs by scanning trailing `toolResult` messages while skipping trailing `user` messages, tracks the active live run per session scope, and resumes the in-flight run instead of calling `Agent.send()` again. When the context ends with steering user text after tool results, the provider releases the prior live run and chains an incremental `Agent.send()` for the latest user message in the same provider turn; if the prior run emits more text or tool requests after steering arrives, that stale activity is cancelled instead of surfacing another old-run tool turn and losing the new user input. A pre-send guard waits for or resumes any still-active scoped live run before starting a fresh send so `@cursor/sdk` `AgentBusyError` (`already has active run`) does not surface to pi users.
 
@@ -48,7 +47,7 @@ Main outcomes:
 - `pi --list-models` shows pi-native Cursor models with accurate `contextWindow`, pi-controllable thinking metadata, and conservative defaults where the Cursor SDK does not expose limits or capabilities.
 - `shift+tab` is pi's native thinking control and drives Cursor `reasoning` or `effort`.
 - Cursor context options are represented as pi-visible model variants when they change native model metadata.
-- Cursor-only state, currently `fast`, is controlled by extension commands and shown through native status text.
+- Cursor-only state, currently none beyond model variants, is controlled through native pi model selection.
 - The default pi footer remains intact.
 - Model capabilities are discovered from the Cursor SDK, not hardcoded per model.
 
@@ -134,8 +133,8 @@ Use native pi abstractions wherever possible:
 | Cursor `reasoning` | pi native thinking via `thinkingLevelMap` |
 | Cursor `effort` | pi native thinking via `thinkingLevelMap` |
 | Cursor `thinking=false` | pi native `off` |
-| Cursor `fast` | extension state, not model identity |
-| Footer | default pi footer plus optional extension status |
+| Cursor `fast` | pi-visible model variant with a `-fast` suffix |
+| Footer | default pi footer only |
 
 Reason:
 
@@ -153,7 +152,8 @@ Rules:
 - Register one pi model for each Cursor base model and each unambiguous SDK alias when there is no Cursor `context` parameter.
 - Register one pi model per Cursor `context` value for each Cursor base model and each unambiguous SDK alias when the model exposes a `context` parameter.
 - Skip SDK aliases that collide with another base model ID or are shared by multiple base models; those aliases can resolve differently from the pi row metadata.
-- Do not encode `reasoning`, `effort`, `thinking`, or `fast` into pi model IDs.
+- Do not encode `reasoning`, `effort`, or `thinking` into pi model IDs.
+- Register a separate `-fast` pi model variant when the Cursor SDK exposes a `fast` parameter.
 - Prefer stable, readable `@<context>` suffixes that do not conflict with pi's final `:<thinking>` suffix parser.
 - Sort Cursor models by base ID, then context value in Cursor SDK order before calling `pi.registerProvider()`. Registration order matters for `/model` display and model cycling; `--list-models` sorts output separately.
 
@@ -185,9 +185,9 @@ cursor/claude-opus-4-7:context=1m;effort=xhigh;thinking=true
 
 Reason:
 
-- `@1m` keeps context visually separate from pi's native `:medium` thinking suffix.
+- `@1m` keeps context visually separate from pi's native `:medium` thinking shorthand.
 - Context variants make `contextWindow` accurate in `--list-models`, the native footer, context overflow checks, and compaction logic.
-- `fast` is intentionally not a model variant because it does not affect pi model metadata and would double list noise.
+- `-fast` keeps fast mode visible as a separate pi model row instead of extension status noise.
 
 ### Metadata Per Registered Model
 
@@ -216,15 +216,7 @@ Infer behavior from discovered params:
 | `reasoning` | populate `thinkingLevelMap` |
 | `effort` | populate `thinkingLevelMap` |
 | `thinking` with `true/false` | map `false` to pi `off`; map `true` to the enabled pi level chosen for boolean-only thinking |
-| `fast` with `true/false` | enable fast extension setting |
-
-Unsupported Cursor-only actions are no-op plus a short notification.
-
-Example:
-
-```text
-Fast mode not supported by gemini-3.1-pro
-```
+| `fast` with `true/false` | register a separate `-fast` pi model variant |
 
 ## Keybindings And Commands
 
@@ -239,7 +231,7 @@ Cursor extension controls:
 
 | Action | Preferred control | Applies when |
 |---|---:|---|
-| Toggle fast | `/cursor-fast` | model has `fast` |
+| Select fast variant | `/model`, `ctrl+l`, `--model cursor/<id>-fast` | model has `fast` |
 
 Do not register a shortcut for `shift+tab`. Pi reserves the native thinking keybinding, and the extension should only influence it through model metadata.
 
@@ -349,31 +341,26 @@ Reason:
 
 ## Fast Behavior
 
-If a model supports `fast`:
+If a model supports `fast`, register two pi model variants per context row:
 
 ```text
-fast=false <-> fast=true
+cursor/composer-2.5
+cursor/composer-2.5-fast
+cursor/gpt-5.5@1m
+cursor/gpt-5.5@1m-fast
 ```
 
 Rules:
 
-- `fast` is extension state, not pi model identity.
-- Toggle with `/cursor-fast`.
-- Store per-session and global per-base-model preferences.
-- When calling `Agent.create()`, include the selected `fast` value in Cursor model params.
-- Show `fast` through `ctx.ui.setStatus()` when enabled.
-- Support a first-pass CLI flag, `--cursor-fast`, to force fast mode for one run when the selected model supports it.
+- The base pi model ID uses `fast=false`.
+- The `-fast` suffix variant uses `fast=true`.
+- Fast mode is selected through native pi model selection, not extension commands or footer status.
+- When calling `Agent.create()`, include the selected model variant's `fast` value in Cursor model params.
 
 Reason:
 
-- `fast` does not affect pi `contextWindow`, thinking levels, or input support.
-- Registering fast/non-fast variants would make `--list-models` noisy without improving native pi behavior.
-
-Status example:
-
-```text
-cursor fast
-```
+- Fast mode becomes visible as its own model category in `--list-models`, `/model`, and the pi footer.
+- pi already persists selected model identity across sessions.
 
 ## Footer Behavior
 
@@ -381,7 +368,7 @@ Hard requirement:
 
 - Leave pi's default footer intact.
 - Do not use `ctx.ui.setFooter()` for the first pass.
-- Use `ctx.ui.setStatus()` only for Cursor-only state that pi cannot show natively, such as `fast`.
+- Do not use `ctx.ui.setStatus()` for fast mode.
 - Non-cursor models must have no Cursor status.
 
 Reason:
@@ -392,22 +379,14 @@ Reason:
 
 Expected native footer behavior:
 
-- provider/model is shown by pi from the selected `cursor` model,
+- provider/model is shown by pi from the selected `cursor` model, including `-fast` when selected,
 - thinking level is shown by pi when `reasoning` is true,
-- context usage is computed from `contextWindow`,
-- extension status adds only Cursor-only text such as `cursor fast`.
+- context usage is computed from `contextWindow`.
 
-`ctx.ui.setStatus()` adds an extension status line in the default footer. It does not patch the built-in model segment. The native shape is closer to:
-
-```text
-...                                      (cursor) gpt-5.5@1m • medium
-cursor fast
-```
-
-not:
+Example:
 
 ```text
-(cursor) gpt-5.5 • 1M • medium • fast
+...                                      (cursor) composer-2.5-fast
 ```
 
 ## State And Persistence
@@ -418,49 +397,29 @@ Match pi's native mental model:
 
 Let pi persist:
 
-- selected model, including context variant,
+- selected model, including context and fast variants,
 - selected thinking level,
 - session model restore,
 - global default thinking behavior.
 
 ### Extension state
 
-The extension persists only Cursor-only state:
-
-- `fast` per session,
-- `fast` global default per Cursor base model,
-- any future Cursor-only parameter that does not map to pi model metadata.
-
-Use:
-
-- `pi.appendEntry()` for session state that must survive resume/fork/reload,
-- an extension-owned global config file for cross-session defaults,
-- in-memory state only as a cache rebuilt from persisted state on `session_start`.
+The extension does not persist separate fast-mode state. Fast mode is represented by the selected pi model ID.
 
 ### New Install
 
-Use Cursor default variants:
-
-```text
-gpt-5.5 -> cursor/gpt-5.5@1m, thinking medium, fast=false
-composer-2.5 -> cursor/composer-2.5, fast=true
-```
+Use pi's native model selection. For Composer-style models, choose `cursor/composer-2.5-fast` when fast mode is desired.
 
 ### Resume Session
 
 Restore:
 
-- pi model, including context variant,
-- pi thinking level,
-- session Cursor-only state such as `fast`.
+- pi model, including context and fast variants,
+- pi thinking level.
 
 ### New Session
 
-Use:
-
-1. pi's selected/default model and thinking level,
-2. global saved Cursor-only defaults for the selected base model,
-3. else Cursor default variant params.
+Use pi's selected/default model and thinking level.
 
 ## CLI / Print Mode
 
@@ -483,21 +442,18 @@ pi --model cursor/gpt-5.5:medium:272k:fast
 Reason:
 
 - pi supports one final `:<thinking>` suffix.
-- Cursor-only parameters are not generic pi CLI parameters.
-- Context is already represented by the registered pi model ID.
-- `fast` is controlled by saved extension defaults or the first-pass `--cursor-fast` extension flag.
+- Context and fast are already represented by the registered pi model ID.
 
 For print mode:
 
 - no keybindings,
-- use selected context model variant,
-- use `--thinking` or `:medium` for reasoning/effort,
-- use saved global `fast` defaults unless `--cursor-fast` is present.
+- use selected context and fast model variants,
+- use `--thinking` or `:medium` for reasoning/effort.
 
-Fast flag example:
+Fast model example:
 
 ```bash
-pi --model cursor/gpt-5.5@1m --cursor-fast -p "Say ok only"
+pi --model cursor/gpt-5.5@1m-fast -p "Say ok only"
 ```
 
 ## Discovered Model Capability Examples
@@ -507,9 +463,9 @@ These examples document the capability shapes the extension handles, not an exha
 | Example model shape | Cursor controls | Pi representation |
 |---|---|---|
 | plain model, such as `default` or models with no exposed controls | none | plain model |
-| Composer-style model such as `composer-2.5` or `composer-2` | fast | plain model + fast extension state |
-| GPT-style reasoning model with context variants | context, reasoning, fast when exposed | context variants + native thinking + optional fast state |
-| Claude-style thinking model with context variants | thinking, context, effort when exposed | context variants + native thinking + optional fast state |
+| Composer-style model such as `composer-2.5` or `composer-2` | fast | base model + `-fast` variant |
+| GPT-style reasoning model with context variants | context, reasoning, fast when exposed | context variants + native thinking + optional `-fast` variants |
+| Claude-style thinking model with context variants | thinking, context, effort when exposed | context variants + native thinking + optional `-fast` variants |
 | Claude-style thinking model without context variants | thinking and/or effort | plain model + native thinking |
 | context-only model | context | context variants |
 | unique latest alias for any shape | aliases | same pi rows as the base model shape, using the alias as `ModelSelection.id` |
@@ -521,33 +477,32 @@ If Cursor later adds `fast`, `context`, `reasoning`, `effort`, or aliases to a m
 
 ### Composer 2 / 2.5
 
-Initial Cursor default for Composer 2.5:
+Standard mode:
 
 ```text
 pi model: cursor/composer-2.5
-Cursor params: fast=true
+Cursor params: fast=false
 pi thinking: off
-Cursor status: cursor fast
 ```
 
-Toggle fast:
+Fast mode:
 
 ```text
-Cursor params: fast=false
-Cursor status: cleared
+pi model: cursor/composer-2.5-fast
+Cursor params: fast=true
+pi thinking: off
 ```
 
 `shift+tab`: no-op because the model is not reasoning-capable.
 
 ### `gpt-5.5`
 
-Initial Cursor default:
+Standard mode:
 
 ```text
 pi model: cursor/gpt-5.5@1m
 Cursor params: context=1m; reasoning=medium; fast=false
 pi thinking: medium
-Cursor status: cleared
 ```
 
 After selecting the 272k variant:
@@ -558,14 +513,14 @@ Cursor params: context=272k; reasoning=medium; fast=false
 pi contextWindow: 272000
 ```
 
-After fast toggle:
+After selecting the fast variant:
 
 ```text
+pi model: cursor/gpt-5.5@272k-fast
 Cursor params: context=272k; reasoning=medium; fast=true
-Cursor status: cursor fast
 ```
 
-After `shift+tab` to xhigh:
+After `shift+tab` to xhigh on the fast variant:
 
 ```text
 pi thinking: xhigh
@@ -574,16 +529,23 @@ Cursor params: context=272k; reasoning=extra-high; fast=true
 
 ### `gpt-5.3-codex`
 
-Initial Cursor default:
+Standard mode:
 
 ```text
 pi model: cursor/gpt-5.3-codex
-Cursor params: reasoning=high; fast=true
+Cursor params: reasoning=high; fast=false
 pi thinking: high
-Cursor status: cursor fast
 ```
 
-After `shift+tab` to low:
+Fast mode:
+
+```text
+pi model: cursor/gpt-5.3-codex-fast
+Cursor params: reasoning=high; fast=true
+pi thinking: high
+```
+
+After `shift+tab` to low on the fast variant:
 
 ```text
 pi thinking: low
@@ -633,7 +595,7 @@ cursor/grok-4.3@1m
 cursor/grok-4.3@200k
 ```
 
-Fast toggle: no-op.
+Fast variants: select `cursor/<id>-fast` when the model supports Cursor `fast`.
 
 `shift+tab`: no-op because the model is not reasoning-capable.
 
@@ -645,31 +607,30 @@ Before calling done:
    - context-variant model IDs
    - dynamic capability discovery
    - context variant registration and decoding
-   - fast extension state and status behavior
+   - `-fast` model variant registration and selection
    - `reasoning` mapping
    - `effort` mapping
    - boolean `thinking` maps to pi `off` / enabled levels
    - pi `xhigh` preference order: `xhigh`, then `max`, then `extra-high`
-   - session restore for Cursor-only state
-   - global default state for Cursor-only state
-   - unsupported no-op notifications
+   - session restore for selected model and thinking level
 
 2. Runtime checks:
    - `pi --list-models cursor`
    - confirm context variants show expected `context` column
+   - confirm `-fast` variants appear for models that expose Cursor `fast`
    - launch interactive with Cursor
    - verify default pi footer remains unchanged
-   - verify Cursor `fast` status appears only when enabled
+   - verify footer shows the selected model ID, including `-fast` when selected
    - verify non-cursor footer/status unchanged
    - verify `shift+tab` uses pi native thinking
-   - verify context changes through native model selection
-   - verify resume restores model, thinking, and Cursor-only state
+   - verify context and fast changes through native model selection
+   - verify resume restores model and thinking level
 
 3. Print mode:
    - `pi --model cursor/gpt-5.5@1m:medium -p "Say ok only"`
    - `pi --model cursor/gpt-5.5@272k --thinking xhigh -p "Say ok only"`
-   - `pi --model cursor/gpt-5.5@1m --cursor-fast -p "Say ok only"`
-   - confirm requests use selected context, pi thinking, and fast flag state
+   - `pi --model cursor/gpt-5.5@1m-fast -p "Say ok only"`
+   - confirm requests use selected context, pi thinking, and fast model variant
 
 4. Tool bridge and replay:
    - `npm test -- test/cursor-pi-tool-bridge.test.ts test/cursor-provider.test.ts test/cursor-mcp-timeout-override.test.ts`

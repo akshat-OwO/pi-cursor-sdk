@@ -198,14 +198,15 @@ fi
 log "check: list-models"
 LIST_OUT="$ISOLATED/list-models.txt"
 run_with_timeout "list-models" 30 env -i "${PI_ENV[@]}" \
-	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' --cursor-no-fast --list-models cursor > '$LIST_OUT' 2>&1"
+	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' --list-models cursor > '$LIST_OUT' 2>&1"
 rg -q "composer-2\\.5|composer-2-5" "$LIST_OUT" || fail "composer-2.5 not listed (see $LIST_OUT)"
+rg -q "composer-2\\.5-fast|composer-2-5-fast" "$LIST_OUT" || fail "composer-2.5-fast not listed (see $LIST_OUT)"
 
 log "check: basic provider prompt"
 BASIC_DIR="$SESSION_ROOT/basic"
 mkdir -p "$BASIC_DIR"
 run_with_timeout "basic prompt" "$PI_LIVE_TIMEOUT" env -i "${PI_ENV[@]}" \
-	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' --cursor-no-fast --model cursor/composer-2.5 --session-dir '$BASIC_DIR' --no-tools -p 'Reply exactly: PI_CURSOR_ISOLATED_OK' > '$ISOLATED/basic.stdout.txt' 2> '$ISOLATED/basic.stderr.txt'"
+	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' --model cursor/composer-2.5 --session-dir '$BASIC_DIR' --no-tools -p 'Reply exactly: PI_CURSOR_ISOLATED_OK' > '$ISOLATED/basic.stdout.txt' 2> '$ISOLATED/basic.stderr.txt'"
 rg -q "PI_CURSOR_ISOLATED_OK" "$ISOLATED/basic.stdout.txt" || fail "basic prompt missing PI_CURSOR_ISOLATED_OK"
 validate_replay_jsonl "$BASIC_DIR"
 
@@ -213,14 +214,14 @@ log "check: native replay"
 REPLAY_DIR="$SESSION_ROOT/native-replay"
 mkdir -p "$REPLAY_DIR"
 run_with_timeout "native replay" "$PI_LIVE_TIMEOUT" env -i "${PI_ENV[@]}" PI_CURSOR_NATIVE_TOOL_DISPLAY=1 \
-	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' --cursor-no-fast --model cursor/composer-2.5 --session-dir '$REPLAY_DIR' -p 'Read ./README.md briefly, then answer README_SEEN=yes if it mentions pi-cursor-sdk.' > '$ISOLATED/replay.stdout.txt' 2> '$ISOLATED/replay.stderr.txt'"
+	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' --model cursor/composer-2.5 --session-dir '$REPLAY_DIR' -p 'Read ./README.md briefly, then answer README_SEEN=yes if it mentions pi-cursor-sdk.' > '$ISOLATED/replay.stdout.txt' 2> '$ISOLATED/replay.stderr.txt'"
 validate_replay_jsonl "$REPLAY_DIR"
 
 log "check: plan-strip shim (plan-mode execute reset)"
 PLAN_DIR="$SESSION_ROOT/plan-strip"
 mkdir -p "$PLAN_DIR"
 run_with_timeout "plan-strip replay" "$PI_LIVE_TIMEOUT" env -i "${PI_ENV[@]}" PI_CURSOR_NATIVE_TOOL_DISPLAY=1 \
-	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' -e '$SHIM_DIR' --cursor-no-fast --model cursor/composer-2.5 --session-dir '$PLAN_DIR' -p 'After reset, read README.md and answer PLAN_STRIP_OK=yes.' > '$ISOLATED/plan.stdout.txt' 2> '$ISOLATED/plan.stderr.txt'"
+	bash -c "cd '$PROJECT_DIR' && '$PI_BIN' -e '$SHIM_DIR' --model cursor/composer-2.5 --session-dir '$PLAN_DIR' -p 'After reset, read README.md and answer PLAN_STRIP_OK=yes.' > '$ISOLATED/plan.stdout.txt' 2> '$ISOLATED/plan.stderr.txt'"
 validate_replay_jsonl "$PLAN_DIR"
 
 log "PASS isolated install smoke: $ISOLATED"

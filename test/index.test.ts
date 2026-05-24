@@ -158,7 +158,7 @@ describe("extension factory", () => {
 		mockedLoadCachedCursorModels.mockReturnValue(undefined);
 	});
 
-	it("registers Cursor fast controls and one provider with correct fields", async () => {
+	it("registers the provider and refresh command", async () => {
 		const mockModels = [
 			{
 				id: "composer-2",
@@ -177,18 +177,6 @@ describe("extension factory", () => {
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi);
 
-		expect(pi.registerFlag).toHaveBeenCalledWith(
-			"cursor-fast",
-			expect.objectContaining({ type: "boolean", default: false }),
-		);
-		expect(pi.registerFlag).toHaveBeenCalledWith(
-			"cursor-no-fast",
-			expect.objectContaining({ type: "boolean", default: false }),
-		);
-		expect(pi.registerCommand).toHaveBeenCalledWith(
-			"cursor-fast",
-			expect.objectContaining({ description: expect.stringContaining("Toggle Cursor fast") }),
-		);
 		expect(pi.registerCommand).toHaveBeenCalledWith(
 			"cursor-refresh-models",
 			expect.objectContaining({ description: expect.stringContaining("Refresh the live Cursor model catalog") }),
@@ -241,7 +229,50 @@ describe("extension factory", () => {
 		expect(call.config.streamSimple).toBe(mockedStreamCursor);
 	});
 
-	it("registers cached Cursor models without blocking on live discovery", async () => {
+	it("registers cached Cursor models immediately and refreshes live models in the background", async () => {
+		const cachedModels = [
+			{
+				id: "composer-2",
+				name: "Cursor Composer 2",
+				reasoning: false,
+				input: ["text", "image"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 128000,
+				maxTokens: 16384,
+			},
+		];
+		const refreshedModels = [
+			{
+				id: "gpt-5.5@1m",
+				name: "GPT-5.5 @ 1m",
+				reasoning: true,
+				input: ["text", "image"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 1000000,
+				maxTokens: 16384,
+			},
+		];
+		mockedLoadCachedCursorModels.mockReturnValueOnce(cachedModels);
+		let resolveDiscover: ((models: typeof refreshedModels) => void) | undefined;
+		mockedDiscover.mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveDiscover = resolve;
+			}),
+		);
+
+		const pi = createMockPi();
+		await extensionFactory(pi);
+
+		expect(pi.registerProvider).toHaveBeenCalledOnce();
+		expect(pi._registered[0].config.models).toBe(cachedModels);
+		expect(mockedDiscover).toHaveBeenCalledOnce();
+
+		resolveDiscover!(refreshedModels);
+		await vi.waitFor(() => expect(pi.registerProvider).toHaveBeenCalledTimes(2));
+		expect(pi._registered[1].config.models).toBe(refreshedModels);
+	});
+
+	it("keeps cached Cursor models when background live refresh falls back", async () => {
 		const cachedModels = [
 			{
 				id: "composer-2",
@@ -254,11 +285,15 @@ describe("extension factory", () => {
 			},
 		];
 		mockedLoadCachedCursorModels.mockReturnValueOnce(cachedModels);
+		mockedDiscover.mockImplementationOnce(async (options: DiscoverOptions) => {
+			options.onFallback?.({ reason: "discovery-failed", message: "network error" });
+			return cachedModels;
+		});
 
 		const pi = createMockPi();
 		await extensionFactory(pi);
 
-		expect(mockedDiscover).not.toHaveBeenCalled();
+		await vi.waitFor(() => expect(mockedDiscover).toHaveBeenCalledOnce());
 		expect(pi.registerProvider).toHaveBeenCalledOnce();
 		expect(pi._registered[0].config.models).toBe(cachedModels);
 	});

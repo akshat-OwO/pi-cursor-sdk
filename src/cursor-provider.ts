@@ -45,7 +45,7 @@ import {
 	setCursorNativeReplayIdleDisposeMs,
 	settleCursorLiveToolBatch,
 } from "./cursor-provider-live-run-drain.js";
-import { getEffectiveFastForModelId } from "./cursor-state.js";
+
 import { buildCursorModelSelection } from "./model-discovery.js";
 import { getCheckpointContextWindow, saveCachedContextWindow } from "./context-window-cache.js";
 import { CursorSdkTurnCoordinator } from "./cursor-provider-turn-coordinator.js";
@@ -171,8 +171,7 @@ export function streamCursor(
 			// pi-ai Context/SimpleStreamOptions do not expose ExtensionContext.cwd; bridge via session_start
 			// until pi threads session cwd into streamSimple (cwd can change without a new session event).
 			const cwd = getCursorSessionCwd();
-			const fastEnabled = getEffectiveFastForModelId(model.id);
-			const selection = buildCursorModelSelection(model.id, options?.reasoning ?? "off", fastEnabled);
+			const selection = buildCursorModelSelection(model.id, options?.reasoning ?? "off");
 			const settingSources = resolveCursorSettingSources();
 
 			installCursorMcpToolTimeoutOverride();

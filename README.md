@@ -95,12 +95,12 @@ pi --model cursor/composer-2.5
 One-shot setup:
 
 ```bash
-pi --api-key "your-key" --model cursor/composer-2.5 --cursor-no-fast -p "Say ok only."
+pi --api-key "your-key" --model cursor/composer-2.5 -p "Say ok only."
 ```
 
 Discovery uses pi's native resolution order for this extension: `--api-key`, the stored `cursor` key in `~/.pi/agent/auth.json`, then `CURSOR_API_KEY`.
 
-Do not store the API key in `~/.pi/agent/cursor-sdk.json`. That file is only for non-secret extension state such as Cursor fast defaults. `PATH` is only for executable lookup and should not contain the API key.
+Do not store the API key in `~/.pi/agent/cursor-sdk.json`. That file may be used for other non-secret extension state. `PATH` is only for executable lookup and should not contain the API key.
 
 ## Verify your setup
 
@@ -118,7 +118,7 @@ Expected behavior:
 Smoke test:
 
 ```bash
-pi --model cursor/composer-2.5 --cursor-no-fast -p "Reply with: ok"
+pi --model cursor/composer-2.5 -p "Reply with: ok"
 ```
 
 ## Choosing a model
@@ -147,7 +147,7 @@ pi --model cursor/gpt-5.5@272k:xhigh
 pi --model cursor/gpt-5.5@1m --thinking medium
 ```
 
-Cursor-only parameters are not encoded into pi model IDs. Cursor `context` becomes a pi-visible model variant because it changes pi's native `contextWindow`; Cursor `fast` is extension state, not model identity. Alias model IDs still share Cursor-only state, such as fast defaults, with their underlying Cursor base model.
+Cursor `reasoning`, `effort`, and boolean `thinking` are not encoded into pi model IDs; pi uses native thinking controls instead. Cursor `context` and `fast` become pi-visible model variants because they affect native model metadata or runtime selection (`@1m`, `-fast`).
 
 ## Thinking support
 
@@ -169,29 +169,18 @@ Some Cursor SDK models do not expose a `reasoning`, `effort`, or `thinking` para
 
 ## Fast mode
 
-Use `/cursor-fast` to persistently toggle fast mode for the selected Cursor model when the model supports Cursor's `fast` parameter.
+When a Cursor model supports Cursor's `fast` parameter, the extension registers two pi model variants:
 
-Fast preferences are remembered per Cursor base model and stored:
+- `cursor/composer-2.5` — standard mode (`fast=false`)
+- `cursor/composer-2.5-fast` — fast mode (`fast=true`)
 
-- in the current session with `pi.appendEntry()`
-- globally in `~/.pi/agent/cursor-sdk.json`
+Context-qualified models follow the same pattern, for example `cursor/gpt-5.5@1m` and `cursor/gpt-5.5@1m-fast`.
 
-For one run, force fast on or off without changing saved defaults:
+Select the fast variant through native pi model selection (`/model`, `ctrl+l`, or `--model`). Fast mode is part of the model identity shown in pi's footer, not a separate extension status line.
 
-```bash
-pi --model cursor/gpt-5.5@1m --cursor-fast -p "Say ok only"
-pi --model cursor/composer-2.5 --cursor-no-fast -p "Say ok only"
-```
+### Migration from `/cursor-fast`
 
-Composer 2 and Composer 2.5 can default to fast. Use `--cursor-no-fast` for a one-shot no-fast Composer run. In print mode (`-p`), `--cursor-no-fast` is silent and does not write `~/.pi/agent/cursor-sdk.json`.
-
-In interactive mode, the footer only shows fast mode when fast is enabled:
-
-```text
-cursor fast
-```
-
-If you do not see `cursor fast`, fast mode is off.
+Older releases used `/cursor-fast`, `--cursor-fast`, and `--cursor-no-fast`, plus saved fast defaults in `~/.pi/agent/cursor-sdk.json`. Those controls are removed. Select a `-fast` model variant instead, for example `cursor/composer-2.5-fast`. Resumed sessions that relied on saved fast state keep the same base model ID but no longer auto-enable fast; switch to the matching `-fast` variant if you still want fast mode.
 
 ## Images
 
@@ -232,7 +221,7 @@ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1 pi --model cursor/composer-2.5
 
 ### Maintainer live smoke release gate
 
-For Cursor provider/runtime changes, follow the manual [Cursor live smoke checklist](docs/cursor-live-smoke-checklist.md) before release. See [Cursor testing lessons](docs/cursor-testing-lessons.md) for auth.json seeding, isolated `/tmp` harness layout, JSONL replay-error scans, and other regression traps. Assume every runtime surface is in scope. The checklist uses real `pi -e . --cursor-no-fast --model cursor/composer-2.5` runs with temporary session dirs and requires the visible TUI/output, scrubbed diagnostics, and persisted JSONL to agree. Do not mark a release ready with optional, deferred, mostly-passing, or unobserved smoke checks outstanding.
+For Cursor provider/runtime changes, follow the manual [Cursor live smoke checklist](docs/cursor-live-smoke-checklist.md) before release. See [Cursor testing lessons](docs/cursor-testing-lessons.md) for auth.json seeding, isolated `/tmp` harness layout, JSONL replay-error scans, and other regression traps. Assume every runtime surface is in scope. The checklist uses real `pi -e . --model cursor/composer-2.5` runs with temporary session dirs and requires the visible TUI/output, scrubbed diagnostics, and persisted JSONL to agree. Do not mark a release ready with optional, deferred, mostly-passing, or unobserved smoke checks outstanding.
 
 ## Fallback models
 
@@ -290,9 +279,9 @@ pi install npm:pi-cursor-sdk
 
 That does not mean the model cannot think. It means the Cursor SDK does not expose a pi-controllable thinking parameter for that model. The model may still think internally and may still emit thinking deltas that pi renders natively.
 
-### I do not see `cursor fast` in the footer
+### How do I use fast mode?
 
-Fast mode is currently off. The footer only shows `cursor fast` when fast mode is enabled.
+Select a `-fast` model variant, for example `cursor/composer-2.5-fast` or `cursor/gpt-5.5@1m-fast`. Fast mode is shown as part of the selected model in pi's footer, not as a separate extension status line.
 
 ### My Cursor app settings or rules do not seem to apply
 

@@ -91,8 +91,7 @@ export interface CursorModelMetadata {
 	defaultParams: ModelParameterValue[];
 	context?: string;
 	contextWindow: number;
-	supportsFast: boolean;
-	defaultFast: boolean;
+	fastEnabled: boolean;
 	supportsReasoning: boolean;
 	thinkingLevelMap?: ThinkingLevelMap;
 	parameterIds: {
@@ -206,18 +205,15 @@ function replaceParam(
 	return next;
 }
 
-function getParamValue(params: ModelParameterValue[], id: string): string | undefined {
-	return params.find((param) => param.id === id)?.value;
-}
-
 function encodePiModelId(modelId: string, context?: string): string {
 	return context ? `${modelId}@${context}` : modelId;
 }
 
-function getModelName(item: ModelListItem, context?: string, alias?: string): string {
+function getModelName(item: ModelListItem, context?: string, alias?: string, fast = false): string {
 	const displayName = item.displayName || item.id;
 	const baseName = alias ? `${displayName} (${alias})` : displayName;
-	return context ? `${baseName} @ ${context}` : baseName;
+	const withContext = context ? `${baseName} @ ${context}` : baseName;
+	return fast ? `${withContext} (fast)` : withContext;
 }
 
 function getContextWindow(contextWindowCache: Map<string, number>, piModelId: string, context?: string, baseModelId?: string): number {
@@ -236,10 +232,10 @@ function toMetadata(
 	selectionModelId: string,
 	defaultParams: ModelParameterValue[],
 	context: string | undefined,
-	contextWindowCache: Map<string, number>,
+	contextWindow: number,
+	fastEnabled: boolean,
 ): CursorModelMetadata {
 	const thinkingLevelMap = getThinkingLevelMap(item);
-	const fastValue = getParamValue(defaultParams, "fast")?.toLowerCase();
 	return {
 		piModelId,
 		baseModelId: item.id,
@@ -247,9 +243,8 @@ function toMetadata(
 		displayName: item.displayName || item.id,
 		defaultParams: cloneParams(defaultParams),
 		...(context ? { context } : {}),
-		contextWindow: getContextWindow(contextWindowCache, piModelId, context, item.id),
-		supportsFast: getParameter(item, "fast") !== undefined,
-		defaultFast: fastValue === "true",
+		contextWindow,
+		fastEnabled,
 		supportsReasoning: thinkingLevelMap !== undefined,
 		...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 		parameterIds: {
@@ -315,16 +310,31 @@ function toModelConfigs(
 	const contexts = contextValues.length > 0 ? contextValues : [undefined];
 	const configs: ProviderModelConfig[] = [];
 
+	const supportsFast = getParameter(item, "fast") !== undefined;
+
 	for (const selectionModelId of getModelIds(item, reservedBaseModelIds, ambiguousAliases)) {
 		const alias = selectionModelId === item.id ? undefined : selectionModelId;
 		for (const context of contexts) {
 			const params = context ? replaceParam(defaultParams, "context", context) : defaultParams;
-			const piModelId = encodePiModelId(selectionModelId, context);
-			if (usedPiModelIds.has(piModelId)) continue;
-			usedPiModelIds.add(piModelId);
-			const metadata = toMetadata(item, piModelId, selectionModelId, params, context, contextWindowCache);
-			metadataByPiModelId.set(piModelId, metadata);
-			configs.push(toModelConfig(metadata, getModelName(item, context, alias)));
+			const basePiModelId = encodePiModelId(selectionModelId, context);
+			const contextWindow = getContextWindow(contextWindowCache, basePiModelId, context, item.id);
+
+			const registerVariant = (piModelId: string, fastEnabled: boolean, name: string): void => {
+				if (usedPiModelIds.has(piModelId)) return;
+				usedPiModelIds.add(piModelId);
+				let variantParams = cloneParams(params);
+				if (supportsFast) {
+					variantParams = replaceParam(variantParams, "fast", fastEnabled ? "true" : "false");
+				}
+				const metadata = toMetadata(item, piModelId, selectionModelId, variantParams, context, contextWindow, fastEnabled);
+				metadataByPiModelId.set(piModelId, metadata);
+				configs.push(toModelConfig(metadata, name));
+			};
+
+			registerVariant(basePiModelId, false, getModelName(item, context, alias));
+			if (supportsFast) {
+				registerVariant(`${basePiModelId}-fast`, true, getModelName(item, context, alias, true));
+			}
 		}
 	}
 
@@ -410,7 +420,6 @@ function applyThinkingLevel(
 export function buildCursorModelSelection(
 	modelId: string,
 	thinkingLevel: ModelThinkingLevel,
-	fastEnabled?: boolean,
 ): ModelSelection {
 	const metadata = getCursorModelMetadata(modelId);
 	if (!metadata) return { id: modelId };
@@ -418,8 +427,8 @@ export function buildCursorModelSelection(
 	const params = cloneParams(metadata.defaultParams);
 	applyThinkingLevel(metadata, params, thinkingLevel);
 
-	if (metadata.supportsFast && fastEnabled !== undefined) {
-		setParam(params, "fast", fastEnabled ? "true" : "false");
+	if (metadata.parameterIds.fast) {
+		setParam(params, "fast", metadata.fastEnabled ? "true" : "false");
 	}
 
 	return params.length > 0 ? { id: metadata.selectionModelId, params } : { id: metadata.selectionModelId };

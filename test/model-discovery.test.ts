@@ -416,17 +416,22 @@ describe("discoverModels", () => {
 			},
 		]);
 		const models = await discoverModels();
-		expect(models.map((model) => model.id)).toEqual(["gpt-5.4@272k", "gpt-5.4@1m"]);
+		expect(models.map((model) => model.id)).toEqual([
+			"gpt-5.4@272k",
+			"gpt-5.4@272k-fast",
+			"gpt-5.4@1m",
+			"gpt-5.4@1m-fast",
+		]);
 		expect(models[0].contextWindow).toBe(272000);
-		expect(models[1].contextWindow).toBe(1000000);
+		expect(models[2].contextWindow).toBe(1000000);
 		expect(models[0].name).toBe("GPT-5.4 @ 272k");
+		expect(models[1].name).toBe("GPT-5.4 @ 272k (fast)");
 
 		const metadata = getCursorModelMetadata("gpt-5.4@272k");
 		expect(metadata).toMatchObject({
 			baseModelId: "gpt-5.4",
 			context: "272k",
-			supportsFast: true,
-			defaultFast: false,
+			fastEnabled: false,
 		});
 		expect(metadata?.defaultParams).toEqual([
 			{ id: "context", value: "272k" },
@@ -435,7 +440,7 @@ describe("discoverModels", () => {
 		]);
 	});
 
-	it("does not encode reasoning, effort, thinking, or fast into pi model IDs", async () => {
+	it("registers fast as a separate pi model variant with a -fast suffix", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
 			{
@@ -458,11 +463,29 @@ describe("discoverModels", () => {
 			},
 		]);
 		const models = await discoverModels();
-		expect(models[0].id).toBe("gpt-5.3-codex");
+		expect(models.map((model) => model.id)).toEqual(["gpt-5.3-codex", "gpt-5.3-codex-fast"]);
 		expect(getCursorModelMetadata("gpt-5.3-codex")?.defaultParams).toEqual([
+			{ id: "reasoning", value: "high" },
+			{ id: "fast", value: "false" },
+		]);
+		expect(getCursorModelMetadata("gpt-5.3-codex-fast")?.defaultParams).toEqual([
 			{ id: "reasoning", value: "high" },
 			{ id: "fast", value: "true" },
 		]);
+	});
+
+	it("does not encode reasoning, effort, or thinking into pi model IDs", async () => {
+		process.env.CURSOR_API_KEY = "test-key-123";
+		mockedList.mockResolvedValueOnce([
+			{
+				id: "reasoning-only",
+				displayName: "Reasoning Only",
+				parameters: [{ id: "reasoning", displayName: "Reasoning", values: [{ value: "high" }] }],
+				variants: [{ params: [{ id: "reasoning", value: "high" }], displayName: "Reasoning Only", isDefault: true }],
+			},
+		]);
+		const models = await discoverModels();
+		expect(models[0].id).toBe("reasoning-only");
 	});
 
 	it("uses bundled SDK-derived context windows for models without context params", async () => {
@@ -488,6 +511,7 @@ describe("discoverModels", () => {
 
 			expect(models.map((model) => [model.id, model.contextWindow])).toEqual([
 				["composer-2", 200000],
+				["composer-2-fast", 200000],
 				["new-sdk-model", 200000],
 			]);
 		} finally {
@@ -803,14 +827,21 @@ describe("discoverModels", () => {
 		const models = await discoverModels();
 		const modelIds = models.map((model) => model.id);
 
-		expect(modelIds).toEqual(expect.arrayContaining(["composer-2.5", "composer-2-5", "composer-2"]));
+		expect(modelIds).toEqual(expect.arrayContaining(["composer-2.5", "composer-2.5-fast", "composer-2-5", "composer-2-5-fast", "composer-2"]));
 		expect(getCursorModelMetadata("composer-2.5")).toEqual(
 			expect.objectContaining({
 				baseModelId: "composer-2.5",
 				selectionModelId: "composer-2.5",
 				contextWindow: 200000,
-				supportsFast: true,
-				defaultFast: true,
+				fastEnabled: false,
+			}),
+		);
+		expect(getCursorModelMetadata("composer-2.5-fast")).toEqual(
+			expect.objectContaining({
+				baseModelId: "composer-2.5",
+				selectionModelId: "composer-2.5",
+				contextWindow: 200000,
+				fastEnabled: true,
 			}),
 		);
 		expect(getCursorModelMetadata("composer-2-5")).toEqual(
@@ -818,17 +849,16 @@ describe("discoverModels", () => {
 				baseModelId: "composer-2.5",
 				selectionModelId: "composer-2-5",
 				contextWindow: 200000,
-				supportsFast: true,
-				defaultFast: true,
+				fastEnabled: false,
 			}),
 		);
 		expect(buildCursorModelSelection("composer-2.5", "off")).toEqual({
 			id: "composer-2.5",
-			params: [{ id: "fast", value: "true" }],
-		});
-		expect(buildCursorModelSelection("composer-2.5", "off", false)).toEqual({
-			id: "composer-2.5",
 			params: [{ id: "fast", value: "false" }],
+		});
+		expect(buildCursorModelSelection("composer-2.5-fast", "off")).toEqual({
+			id: "composer-2.5",
+			params: [{ id: "fast", value: "true" }],
 		});
 	});
 
@@ -987,8 +1017,8 @@ describe("buildCursorModelSelection", () => {
 		]);
 	});
 
-	it("uses selected context, pi thinking, and fast state", () => {
-		expect(buildCursorModelSelection("gpt-5.4@272k", "xhigh", true)).toEqual({
+	it("uses selected context, pi thinking, and fast model variant", () => {
+		expect(buildCursorModelSelection("gpt-5.4@272k-fast", "xhigh")).toEqual({
 			id: "gpt-5.4",
 			params: [
 				{ id: "context", value: "272k" },

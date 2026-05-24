@@ -7,7 +7,6 @@ SHELL_BIN="${SHELL:-/bin/bash}"
 
 PI_BASE=(
 	pi -e "$ROOT"
-	--cursor-no-fast
 	--model cursor/composer-2.5
 )
 

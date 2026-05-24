@@ -5,7 +5,7 @@
 Manual release smoke verification for `pi-cursor-sdk` 0.1.16 using the local working tree with:
 
 ```bash
-pi -e . --cursor-no-fast --model cursor/composer-2.5
+pi -e . --model cursor/composer-2.5
 ```
 
 The smoke used a temporary session directory and did not record Cursor API keys, raw session contents with secrets, endpoint URLs, or local private paths in this document.
@@ -49,7 +49,7 @@ Command shape:
 
 ```bash
 PI_CURSOR_SETTING_SOURCES=none \
-pi -e . --cursor-no-fast --model cursor/composer-2.5 \
+pi -e . --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/basic" \
   --no-tools \
   -p 'Live smoke. Reply exactly: PI_CURSOR_SMOKE_OK'
@@ -67,7 +67,7 @@ Observed:
 Command shape:
 
 ```bash
-pi -e . --cursor-no-fast --model cursor/composer-2.5 \
+pi -e . --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/default-settings" \
   --no-tools \
   -p 'Default settings smoke. Include PRODUCT=42 in the final answer.'
@@ -87,7 +87,7 @@ Command shape:
 
 ```bash
 PI_CURSOR_SETTING_SOURCES=none \
-pi -e . --cursor-no-fast --model cursor/composer-2.5 \
+pi -e . --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/tui" \
   --no-tools \
   'TUI smoke. Compute 19 + 23. Reply only with SUM=<number>.'
@@ -97,7 +97,7 @@ Observed in tmux:
 
 - Assistant output showed `SUM=42`.
 - Footer showed `(cursor) composer-2.5`.
-- With `--cursor-no-fast`, Cursor fast status was absent.
+- Footer showed `(cursor) composer-2.5` with no separate Cursor fast status line.
 - `/session` showed one user message and one assistant message.
 - Persisted JSONL structure: roles `user, assistant`; one assistant message; assistant usage present with non-negative fields and `cacheRead/cacheWrite` equal to `0`.
 - The tmux smoke session was killed after capture; no `pi-cursor-sdk-smoke` tmux sessions remained.
@@ -110,7 +110,7 @@ Command shape:
 PI_CURSOR_SETTING_SOURCES=none \
 PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1 \
 PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1 \
-pi -e . --cursor-no-fast --model cursor/composer-2.5 \
+pi -e . --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/bridge" \
   -p 'Bridge smoke. Do exactly two tool calls before answering: first call pi__read on ./package.json; second call pi__read on ./definitely-missing-pi-cursor-sdk-smoke-file.txt. Then answer: OK_NAME=<package name>; MISSING_RESULT=<error or success>. Do not use shell.'
 ```
@@ -133,7 +133,7 @@ Command shape:
 PI_CURSOR_SETTING_SOURCES=none \
 PI_CURSOR_PI_TOOL_BRIDGE=0 \
 PI_CURSOR_NATIVE_TOOL_DISPLAY=1 \
-pi -e . --cursor-no-fast --model cursor/composer-2.5 \
+pi -e . --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/native-replay" \
   -p 'Native replay smoke. Use your Cursor file-reading capability to read ./README.md, then answer README_SEEN=yes if it contains pi-cursor-sdk.'
 ```
@@ -169,7 +169,7 @@ Command shape:
 PI_CURSOR_SETTING_SOURCES=none \
 PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1 \
 PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1 \
-pi -e . --cursor-no-fast --model cursor/composer-2.5 \
+pi -e . --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/abort" \
   -p 'Abort smoke. Call pi__bash with command: sleep 30 && echo SHOULD_NOT_PRINT. Do not answer until the tool completes.'
 ```

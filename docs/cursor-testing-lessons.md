@@ -174,7 +174,7 @@ Simulate plan-mode execute stripping with the repo fixture:
 It sets active tools to `read`, `bash`, `edit`, `write` on each `turn_start`. Run pi with:
 
 ```bash
-pi -e scripts/fixtures/plan-strip-shim --cursor-no-fast --model cursor/composer-2.5 \
+pi -e scripts/fixtures/plan-strip-shim --model cursor/composer-2.5 \
   --session-dir "$SMOKE_DIR/plan-strip" \
   -p 'After reset, read README.md and answer PLAN_STRIP_OK=yes.'
 ```
