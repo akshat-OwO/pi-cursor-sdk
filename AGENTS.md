@@ -57,12 +57,13 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 
 ## Setup and commands
 
-- Install dependencies: `npm install`
+- Install dependencies: `pnpm install`
 - Run tests: `npm test`
 - Typecheck: `npm run typecheck`
 - Package-readiness check: `npm pack --dry-run`
 - Watch tests while developing: `npm run test:watch`
 - Local development run, requires a Cursor key: `CURSOR_API_KEY="your-key" pi -e . --model cursor/composer-2.5`
+- Local extension install (recommended for this repo): symlink the repo to `~/.pi/agent/extensions/cursor-sdk`, run `pnpm install`, then start pi from any project.
 - List Cursor models, requires pi and usually a Cursor key: `pi --list-models cursor`
 
 There is no lint or format script in `package.json` at this time.
@@ -73,7 +74,7 @@ There is no lint or format script in `package.json` at this time.
 - Keep strict TypeScript types. Avoid `any` except in tests or when narrowing untyped external SDK data.
 - Keep provider runtime code side-effect-light. Do not write secrets, and do not let cache or discovery failures break response streaming unless the run cannot proceed safely.
 - Add or update tests for behavior changes in `src/`. Prefer focused unit tests over live Cursor calls.
-- If dependency versions change, update `package-lock.json` with npm. Do not manually edit generated dependency output.
+- If dependency versions change, update `pnpm-lock.yaml` with pnpm. Do not manually edit generated dependency output.
 - Do not commit `dist/`, `coverage/`, `.env*`, `.pi/`, or package tarballs.
 
 ## Validation and done criteria
