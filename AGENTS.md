@@ -30,6 +30,10 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 - `src/cursor-question-tool.ts` owns the bridge-exposed `cursor_ask_question` pi UI tool.
 - `src/cursor-native-tool-display.ts` re-exports native replay display registration and state APIs.
 - `src/cursor-native-tool-display-registration.ts` owns native replay tool registration and model-scoped activation.
+- `src/cursor-native-replay-routing.ts` owns canonical native replay disposition (`queue_replay` / `inactive_trace` / `transcript_trace`) and context-tool partitioning for drain.
+- `src/cursor-native-replay-trace.ts` owns inactive native replay trace formatting (`title: summary`).
+- `src/cursor-context-tools.ts` owns `context.tools` snapshot helpers at provider stream start.
+- `src/cursor-display-text.ts` owns shared single-line sanitization and 240-char truncation for replay/trace display.
 - `src/cursor-native-tool-display-replay.ts` owns replay card rendering and diff/preview formatting.
 - `src/cursor-native-tool-display-tools.ts` owns native/replay tool definition factories and replay execute wrappers.
 - `src/cursor-native-tool-display-state.ts` owns native replay display state, env gating, and record/consume helpers.
@@ -39,6 +43,7 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 - `src/context.ts`, `src/context-window-cache.ts`, and `src/bundled-context-windows.ts` handle prompt conversion and context-window caches.
 - `test/**/*.test.ts` contains Vitest coverage for provider registration, discovery, state, context, bridge, replay, and streaming behavior.
 - `docs/cursor-model-ux-spec.md` is the maintainer design source of truth for Cursor model UX. Keep it aligned with behavior changes.
+- `docs/cursor-testing-lessons.md` is the maintainer source of truth for regression testing lessons (auth.json, isolated smoke harnesses, JSONL replay scans, plan-mode replay traps).
 
 ## Operating rules
 
@@ -96,7 +101,7 @@ Use a short written plan before multi-file behavior changes, SDK integration cha
 - NEVER store Cursor API keys in repo files, `~/.pi/agent/cursor-sdk.json`, tests, logs, snapshots, or docs examples.
 - Scrub Cursor SDK errors and output that may contain API keys, bearer tokens, cookies, sessions, or auth headers.
 - Ambient Cursor settings/rules loading is enabled by default through `PI_CURSOR_SETTING_SOURCES=all`; keep SDK startup log filtering intact so settings/skills output does not corrupt pi's TUI.
-- Live `pi`/Cursor smoke tests may call external services and require `CURSOR_API_KEY`; run them for Cursor provider/runtime changes. If a key is unavailable, report live smoke as release-blocked instead of skipped-ready.
+- Live `pi`/Cursor smoke tests may call external services and require Cursor auth in `~/.pi/agent/auth.json` and/or `CURSOR_API_KEY`; run them for Cursor provider/runtime changes. If auth is unavailable, report live smoke as release-blocked instead of skipped-ready. See `docs/cursor-testing-lessons.md` for isolated harness auth seeding.
 - For Cursor provider/runtime changes, follow `docs/cursor-live-smoke-checklist.md`. Assume every runtime surface is in scope. Use real `pi -e . --cursor-no-fast --model cursor/composer-2.5` invocations, a temporary `--session-dir`, manual observation, and no secret printing. Do not mark release-ready with optional/deferred/mostly-passing smoke items outstanding.
 
 ## Progress updates and handoff

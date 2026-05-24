@@ -28,6 +28,7 @@ import {
 	getCursorPromptOptions,
 } from "./cursor-usage-accounting.js";
 import { getCursorSessionCwd } from "./cursor-session-cwd.js";
+import { getActiveContextToolNames } from "./cursor-context-tools.js";
 import { CursorLiveRunAbortError, type CursorLiveRun } from "./cursor-live-run-coordinator.js";
 import {
 	abandonSessionCursorAgent,
@@ -38,6 +39,7 @@ import {
 	DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS,
 	getPendingCursorLiveRun,
 	hasTrailingUserMessagesAfterToolResults,
+	releaseAllPendingCursorLiveRunsForTests,
 	resetCursorNativeReplayIdleDisposeMs,
 	selectCursorFinalText,
 	setCursorNativeReplayIdleDisposeMs,
@@ -209,6 +211,7 @@ export function streamCursor(
 			const sessionBridgeRun = sessionAgentLease.bridgeRun;
 			const promptInputTokens = estimateCursorPromptInputTokens(prompt, promptOptions);
 			const useNativeToolReplay = isCursorNativeToolDisplayRuntimeEnabled();
+			const activeToolNames = getActiveContextToolNames(context);
 			const nativeReplayId = createCursorNativeReplayId();
 			const textDeltas: string[] = [];
 			const useLiveRun = useNativeToolReplay || bridgeRun !== undefined;
@@ -237,6 +240,7 @@ export function streamCursor(
 				resolvedApiKey,
 				liveRun,
 				useNativeToolReplay,
+				activeToolNames,
 				nativeReplayId,
 				textDeltas,
 			});
@@ -365,5 +369,6 @@ export const __testUtils = {
 	hasTrailingUserMessagesAfterToolResults,
 	setCursorNativeReplayIdleDisposeMs,
 	resetCursorNativeReplayIdleDisposeMs,
+	releaseAllPendingCursorLiveRunsForTests,
 	resetSessionCursorAgents: () => disposeAllSessionCursorAgents(),
 };

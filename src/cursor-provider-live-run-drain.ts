@@ -23,6 +23,8 @@ import { resetSessionCursorAgent } from "./cursor-session-agent.js";
 import { applyCursorApproximateUsage } from "./cursor-usage-accounting.js";
 import { CursorPartialContentEmitter } from "./cursor-partial-content-emitter.js";
 import { hasUsableText } from "./cursor-record-utils.js";
+import { formatInactiveCursorReplayTrace } from "./cursor-native-replay-trace.js";
+import { partitionNativeToolsByActiveContext } from "./cursor-native-replay-routing.js";
 
 export const DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS = 5 * 60 * 1000;
 const CURSOR_NATIVE_REPLAY_TOOL_ID_PATTERN = /^(cursor-replay-\d+-\d+)-tool-\d+$/;
@@ -200,6 +202,13 @@ function emitCursorNativeToolUseTurn(
 	cursorLiveRuns.requestIdleDispose(run);
 }
 
+function emitInactiveCursorReplayTrace(turn: CursorLiveTurnState, tools: CursorNativeToolDisplayItem[]): void {
+	if (tools.length === 0) return;
+	for (const tool of tools) {
+		turn.emitter.appendThinkingBlock(formatInactiveCursorReplayTrace(tool));
+	}
+}
+
 function emitCursorBridgeToolUseTurn(
 	stream: AssistantMessageEventStream,
 	partial: AssistantMessage,
@@ -229,24 +238,30 @@ function emitCursorBridgeToolUseTurn(
 }
 
 async function emitCursorLiveRunPendingToolUseTurn(
+	turn: CursorLiveTurnState,
 	stream: AssistantMessageEventStream,
 	partial: AssistantMessage,
 	model: Model<Api>,
 	context: Context,
 	run: CursorLiveRun,
 	toolResultInputTokens: number,
-	signal?: AbortSignal,
-	beforeEmit?: () => void,
-): Promise<"tool_use" | undefined> {
+	options: { mode: CursorLiveRunDrainMode; signal?: AbortSignal },
+): Promise<"tool_use" | "handled" | undefined> {
 	const eventType = cursorLiveRuns.peekEvent(run)?.type;
 	if (eventType !== "tool" && eventType !== "bridge-tool") return undefined;
 	await settleCursorLiveToolBatch(run);
-	if (signal?.aborted) throw new CursorLiveRunAbortError();
-	beforeEmit?.();
+	if (options.signal?.aborted) throw new CursorLiveRunAbortError();
 	if (eventType === "tool") {
-		const tools = cursorLiveRuns.collectNativeToolBatch(run);
-		emitCursorNativeToolUseTurn(stream, partial, model, context, run, toolResultInputTokens, tools);
+		const { active, inactive } = partitionNativeToolsByActiveContext(context, cursorLiveRuns.collectNativeToolBatch(run));
+		if (options.mode === "emit") emitInactiveCursorReplayTrace(turn, inactive);
+		if (active.length === 0) {
+			// Inactive-only batch: trace was emitted above; do not emit toolUse.
+			return "handled";
+		}
+		if (options.mode === "emit") turn.emitter.closeAll();
+		emitCursorNativeToolUseTurn(stream, partial, model, context, run, toolResultInputTokens, active);
 	} else {
+		if (options.mode === "emit") turn.emitter.closeAll();
 		const requests = cursorLiveRuns.collectBridgeToolBatch(run);
 		emitCursorBridgeToolUseTurn(stream, partial, model, context, run, toolResultInputTokens, requests);
 	}
@@ -275,16 +290,17 @@ export async function drainCursorLiveRunTurn(
 
 		while (cursorLiveRuns.peekEvent(run)) {
 			const toolUse = await emitCursorLiveRunPendingToolUseTurn(
+				turn,
 				stream,
 				partial,
 				model,
 				context,
 				run,
 				toolResultInputTokens,
-				options.signal,
-				options.mode === "emit" ? () => turn.emitter.closeAll() : undefined,
+				options,
 			);
-			if (toolUse) return toolUse;
+			if (toolUse === "tool_use") return toolUse;
+			if (toolUse === "handled") continue;
 			const event = cursorLiveRuns.shiftEvent(run);
 			if (!event || event.type === "tool" || event.type === "bridge-tool") continue;
 			if (options.mode === "emit") emitCursorLiveQueuedEvent(turn, event, run);
@@ -374,6 +390,16 @@ export function setCursorNativeReplayIdleDisposeMs(value: number): void {
 
 export function resetCursorNativeReplayIdleDisposeMs(): void {
 	cursorNativeReplayIdleDisposeMs = DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS;
+}
+
+export async function releaseAllPendingCursorLiveRunsForTests(): Promise<void> {
+	while (cursorLiveRuns.count() > 0) {
+		const run = cursorLiveRuns.getActiveForScope();
+		if (!run) break;
+		const before = cursorLiveRuns.count();
+		await cursorLiveRuns.release(run);
+		if (cursorLiveRuns.count() >= before) break;
+	}
 }
 
 export { hasTrailingUserMessagesAfterToolResults };

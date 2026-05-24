@@ -1,7 +1,6 @@
-import type { ExtensionAPI, ExtensionContext, ExtensionHandler, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type { BeforeAgentStartEvent, ExtensionAPI, ExtensionContext, ExtensionHandler, SessionStartEvent, TurnStartEvent } from "@earendil-works/pi-coding-agent";
 import {
 	CURSOR_MODEL_ACTIVE_REPLAY_TOOL_NAMES,
-	CURSOR_REPLAY_TOOL_NAMES,
 	isNativeCursorToolName,
 	NATIVE_CURSOR_TOOL_NAMES,
 	registerNativeCursorTool,
@@ -16,10 +15,14 @@ import {
 } from "./cursor-native-tool-display-state.js";
 import { isCursorReplayToolName } from "./cursor-tool-names.js";
 
+const CORE_PI_TOOL_NAMES = new Set(["read", "bash", "edit", "write"]);
+
 type CursorNativeToolRegistryApi = Pick<ExtensionAPI, "getActiveTools" | "getAllTools" | "registerTool" | "setActiveTools">;
 
 export interface CursorNativeToolDisplayExtensionApi extends CursorNativeToolRegistryApi {
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
+	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent>): void;
+	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "model_select", handler: (event: { model: ExtensionContext["model"] }, ctx: ExtensionContext) => Promise<void> | void): void;
 }
 
@@ -46,7 +49,8 @@ export function syncRegisteredNativeCursorToolsForModel(pi: Pick<ExtensionAPI, "
 			changed = true;
 		}
 	} else {
-		for (const toolName of CURSOR_REPLAY_TOOL_NAMES) {
+		for (const toolName of registeredNativeToolNames) {
+			if (CORE_PI_TOOL_NAMES.has(toolName)) continue;
 			if (!activeToolNames.delete(toolName)) continue;
 			changed = true;
 		}
@@ -84,6 +88,12 @@ function registerAvailableNativeCursorTools(pi: CursorNativeToolRegistryApi, ctx
 export function registerCursorNativeToolDisplay(pi: CursorNativeToolDisplayExtensionApi): void {
 	pi.on("session_start", (_event, ctx) => {
 		registerAvailableNativeCursorTools(pi, ctx);
+	});
+	pi.on("before_agent_start", (_event, ctx) => {
+		syncRegisteredNativeCursorToolsForModel(pi, ctx.model);
+	});
+	pi.on("turn_start", (_event, ctx) => {
+		syncRegisteredNativeCursorToolsForModel(pi, ctx.model);
 	});
 	pi.on("model_select", (event) => {
 		syncRegisteredNativeCursorToolsForModel(pi, event.model);
