@@ -4,6 +4,13 @@ import { getLanguageFromPath, highlightCode, type ToolDefinition } from "@earend
 import { Image, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { resolveCursorEditDiff } from "./cursor-edit-diff.js";
+import { isCursorTaskDisplayEnabled } from "./cursor-task-ui.js";
+import {
+	getCursorTaskReplayDescription,
+	isCursorTaskReplayContext,
+	renderCursorTaskCall,
+	renderCursorTaskResult,
+} from "./cursor-task-display.js";
 import {
 	CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
 	getCursorReplayDisplayLabel,
@@ -34,6 +41,8 @@ export interface CursorReplayToolDetails {
 	diff?: string;
 	firstChangedLine?: number;
 	expandedText?: string;
+	description?: string;
+	durationMs?: number;
 }
 
 export function asCursorReplayToolDetails(value: unknown): CursorReplayToolDetails | undefined {
@@ -295,6 +304,9 @@ export function renderCursorReplayCall(
 	isPartial: boolean,
 ): Text {
 	if (!isPartial) return new Text("", 0, 0);
+	if (isCursorTaskDisplayEnabled() && (toolName === "cursor_task" || isCursorTaskReplayContext(args, undefined))) {
+		return renderCursorTaskCall(args, theme, isPartial);
+	}
 	let text = theme.fg("toolTitle", theme.bold(`${getCursorReplayActivityTitle(toolName, args)} `));
 	const summary = getCursorReplayCallSummary(toolName, args);
 	if (summary) text += theme.fg("accent", summary);
@@ -436,6 +448,9 @@ export function renderCursorReplayResult(
 	}
 
 	if (details?.cursorToolName === "generateImage") return renderCursorGenerateImageResult(result, options, theme, context, isError);
+	if (isCursorTaskDisplayEnabled() && isCursorTaskReplayContext(undefined, details)) {
+		return renderCursorTaskResult(result, options, theme, isError);
+	}
 	if (details?.title) return renderExpandableCursorReplayResult(details.title, result, options, theme, context, isError);
 	return new Text(text || theme.fg("success", "Cursor tool result replayed"), 0, 0);
 }

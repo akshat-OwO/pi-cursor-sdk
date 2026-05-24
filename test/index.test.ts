@@ -886,7 +886,9 @@ describe("extension factory", () => {
 			theme,
 			context,
 		)?.render(120).join("\n") ?? "";
-		expect(taskRendered).toContain("Cursor task Quick repo file count: 20");
+		expect(taskRendered).toContain("✓");
+		expect(taskRendered).toContain("Quick repo file count");
+		expect(taskRendered).toContain("20");
 
 		const editTool = pi._tools.find((tool) => tool.name === "cursor_edit");
 		const editRendered = editTool.renderResult?.(

@@ -375,13 +375,17 @@ const TOOL_DISPLAY_SPECS: Record<string, ToolDisplaySpec> = {
 			labelKey: "cursor_task",
 			buildActivityArgs: ({ args, result }) => {
 				const description = getTaskDescription(args, result);
-				return { description: truncateArg(description) };
+				return { description: truncateArg(description), activitySummary: truncateArg(summarizeTask(description, collectTaskText(result))) };
 			},
 			buildActivitySummary: ({ args, result }) => {
 				const description = getTaskDescription(args, result);
 				return summarizeTask(description, collectTaskText(result));
 			},
-			buildDetails: () => ({}),
+			buildDetails: ({ args, result }, contentText) => ({
+				description: truncateArg(getTaskDescription(args, result)),
+				summary: summarizeTask(getTaskDescription(args, result), collectTaskText(result)),
+				expandedText: contentText,
+			}),
 		},
 	},
 	generateImage: {

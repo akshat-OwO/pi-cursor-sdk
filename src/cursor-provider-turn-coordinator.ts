@@ -9,7 +9,15 @@ import { CursorPartialContentEmitter } from "./cursor-partial-content-emitter.js
 import { asRecord, getField, hasUsableText } from "./cursor-record-utils.js";
 import { scrubPiToolDisplay, scrubSensitiveText } from "./cursor-sensitive-text.js";
 import { buildCursorPiToolDisplay, formatCursorToolTranscript, getCursorCreatePlanText, mergeCursorToolCalls } from "./cursor-tool-transcript.js";
-import { getString, getToolArgs, getToolName } from "./cursor-transcript-utils.js";
+import {
+	completeCursorTask,
+	extractCursorTaskDescription,
+	getCursorTask,
+	isCursorTaskToolCall,
+	shouldSuppressCursorTaskThinkingProgress,
+	startCursorTask,
+} from "./cursor-task-ui.js";
+import { getToolName } from "./cursor-transcript-utils.js";
 
 function formatCursorToolName(toolCall: unknown): string {
 	return truncateCursorDisplayLine(getToolName(toolCall), 80) || "unknown";
@@ -28,17 +36,6 @@ interface CursorShellOutputDeltas {
 function isCursorShellToolCall(toolCall: unknown): boolean {
 	const normalizedName = getToolName(toolCall).replace(/\s+/g, " ").trim().toLowerCase();
 	return normalizedName === "shell" || normalizedName === "run_terminal_cmd" || normalizedName === "terminal" || normalizedName === "bash";
-}
-
-function isCursorTaskToolCall(toolCall: unknown): boolean {
-	return getToolName(toolCall).replace(/\s+/g, " ").trim().toLowerCase() === "task";
-}
-
-function extractCursorTaskProgressLabel(toolCall: unknown, apiKey?: string): string | undefined {
-	if (!isCursorTaskToolCall(toolCall)) return undefined;
-	const description = getString(getToolArgs(toolCall), "description");
-	if (!description?.trim()) return undefined;
-	return truncateCursorDisplayLine(scrubSensitiveText(description, apiKey));
 }
 
 function getCursorShellOutputDelta(update: InteractionUpdate): CursorShellOutputDelta | undefined {
@@ -328,6 +325,7 @@ export class CursorSdkTurnCoordinator {
 
 		const transcript = scrubSensitiveText(formatCursorToolTranscript(toolCall, { cwd: this.cwd }), this.resolvedApiKey);
 		const display = buildCursorPiToolDisplay(toolCall, { cwd: this.cwd });
+		this.trackCursorTaskCompletion(toolCall, display, options.identity);
 		const fingerprint = this.getToolFingerprint({ toolName: display.toolName, args: display.args, result: display.result });
 		if (options.identity && this.completedToolIdentities.has(options.identity)) return;
 		if (options.source === "started") {
@@ -377,12 +375,31 @@ export class CursorSdkTurnCoordinator {
 		this.contentEmitter.appendThinkingBlock(traceText);
 	}
 
+	private trackCursorTaskCompletion(toolCall: unknown, display: ReturnType<typeof buildCursorPiToolDisplay>, identity?: string): void {
+		if (!isCursorTaskToolCall(toolCall)) return;
+		const callId = identity?.startsWith("cursor-tool:") ? identity.slice("cursor-tool:".length) : undefined;
+		if (!callId) return;
+		const summary = display.result.content
+			.map((entry) => (entry.type === "text" ? entry.text : undefined))
+			.filter((entry): entry is string => Boolean(entry))
+			.join("\n")
+			.split("\n")
+			.find((line) => line.trim());
+		completeCursorTask(callId, display.isError ? "error" : "completed", summary);
+		const task = getCursorTask(callId);
+		if (task?.completedAt !== undefined && display.result.details && typeof display.result.details === "object") {
+			(display.result.details as Record<string, unknown>).durationMs = task.completedAt - task.startedAt;
+		}
+	}
+
 	private maybeEmitCursorTaskProgress(callId: unknown, toolCall: unknown): void {
 		if (typeof callId !== "string" || this.emittedTaskProgressCallIds.has(callId)) return;
 		if (this.liveRun?.bridgeRun?.isBridgeMcpToolCall(toolCall)) return;
-		const label = extractCursorTaskProgressLabel(toolCall, this.resolvedApiKey);
+		const label = extractCursorTaskDescription(toolCall, this.resolvedApiKey);
 		if (!label) return;
 		this.emittedTaskProgressCallIds.add(callId);
+		startCursorTask(callId, label);
+		if (shouldSuppressCursorTaskThinkingProgress()) return;
 		this.emitCursorTaskProgress(label);
 	}
 

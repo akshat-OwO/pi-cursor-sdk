@@ -5,6 +5,7 @@ import { registerCursorPiToolBridge } from "./cursor-pi-tool-bridge.js";
 import { registerCursorQuestionTool } from "./cursor-question-tool.js";
 import { registerCursorSessionCwd } from "./cursor-session-cwd.js";
 import { registerCursorSessionAgent } from "./cursor-session-agent.js";
+import { registerCursorTaskWidget } from "./cursor-task-widget-registration.js";
 import { streamCursor } from "./cursor-provider.js";
 
 type CursorExtensionApi =
@@ -19,6 +20,7 @@ type CursorExtensionApi =
 	& Parameters<typeof registerCursorSessionAgent>[0]
 	& Parameters<typeof registerCursorNativeToolDisplay>[0]
 	& Parameters<typeof registerCursorQuestionTool>[0]
+	& Parameters<typeof registerCursorTaskWidget>[0]
 	& Parameters<typeof registerCursorPiToolBridge>[0];
 
 function createCursorProviderConfig(models: ProviderModelConfig[]): ProviderConfig {
@@ -54,6 +56,7 @@ export default async function (pi: CursorExtensionApi) {
 	registerCursorSessionAgent(pi);
 	registerCursorNativeToolDisplay(pi);
 	registerCursorQuestionTool(pi);
+	registerCursorTaskWidget(pi);
 	registerCursorPiToolBridge(pi);
 	let fallbackIssue: CursorModelFallbackIssue | undefined;
 	const cachedModels = loadCachedCursorModels();
