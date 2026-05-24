@@ -9,6 +9,7 @@ import {
 
 describe("cursor-native-replay-routing", () => {
 	beforeEach(() => {
+		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		nativeToolDisplayTestUtils.reset();
 		nativeToolDisplayTestUtils.registerNativeToolNameForTests("grep");
 	});

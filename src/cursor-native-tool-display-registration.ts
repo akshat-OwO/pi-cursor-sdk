@@ -7,10 +7,7 @@ import {
 	type NativeCursorToolName,
 } from "./cursor-native-tool-display-tools.js";
 import {
-	isCursorNativeToolDisplayRequested,
 	isCursorNativeToolRegistrationRequested,
-	NATIVE_CURSOR_TOOL_DISPLAY_ENV,
-	readBooleanEnv,
 	registeredNativeToolNames,
 } from "./cursor-native-tool-display-state.js";
 import { isCursorReplayToolName } from "./cursor-tool-names.js";
@@ -26,12 +23,7 @@ export interface CursorNativeToolDisplayExtensionApi extends CursorNativeToolReg
 	on(event: "model_select", handler: (event: { model: ExtensionContext["model"] }, ctx: ExtensionContext) => Promise<void> | void): void;
 }
 
-function hasNonBuiltinTool(pi: Pick<ExtensionAPI, "getAllTools">, toolName: NativeCursorToolName): boolean {
-	const existingTool = pi.getAllTools().find((tool) => tool.name === toolName);
-	return existingTool !== undefined && existingTool.sourceInfo.source !== "builtin";
-}
-
-type NativeRegistrationContext = { hasUI: boolean; ui: Pick<ExtensionContext["ui"], "notify">; model?: ExtensionContext["model"] };
+type NativeRegistrationContext = { model?: ExtensionContext["model"] };
 
 function isCursorModel(model: ExtensionContext["model"]): boolean {
 	return model?.provider === "cursor" || model?.api === "cursor-sdk";
@@ -64,25 +56,13 @@ function registerAvailableNativeCursorTools(pi: CursorNativeToolRegistryApi, ctx
 		return;
 	}
 
-	const skippedToolNames: string[] = [];
 	for (const toolName of NATIVE_CURSOR_TOOL_NAMES) {
 		if (registeredNativeToolNames.has(toolName)) continue;
-		if (hasNonBuiltinTool(pi, toolName)) {
-			skippedToolNames.push(toolName);
-			continue;
-		}
 		registerNativeCursorTool(pi, toolName);
 		registeredNativeToolNames.add(toolName);
 	}
 
 	syncRegisteredNativeCursorToolsForModel(pi, ctx.model);
-
-	if (skippedToolNames.length > 0 && readBooleanEnv(NATIVE_CURSOR_TOOL_DISPLAY_ENV) === true && ctx.hasUI) {
-		ctx.ui.notify(
-			`Cursor native tool replay skipped for ${skippedToolNames.join(", ")} because another extension already provides ${skippedToolNames.length === 1 ? "that tool" : "those tools"}. Cursor will use scrubbed activity transcripts for skipped tools.`,
-			"warning",
-		);
-	}
 }
 
 export function registerCursorNativeToolDisplay(pi: CursorNativeToolDisplayExtensionApi): void {
@@ -100,4 +80,5 @@ export function registerCursorNativeToolDisplay(pi: CursorNativeToolDisplayExten
 	});
 }
 
-export { isNativeCursorToolName, isCursorNativeToolDisplayRequested };
+export { isNativeCursorToolName };
+export { isCursorNativeToolDisplayRequested } from "./cursor-native-tool-display-state.js";

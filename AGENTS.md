@@ -35,7 +35,9 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 - `src/cursor-context-tools.ts` owns `context.tools` snapshot helpers at provider stream start.
 - `src/cursor-display-text.ts` owns shared single-line sanitization and 240-char truncation for replay/trace display.
 - `src/cursor-native-tool-display-replay.ts` owns replay card rendering and diff/preview formatting.
-- `src/cursor-compact-tool-display.ts` owns compact one-line TUI rendering for Cursor native replay `read`, `grep`, and `find` (`renderShell: "self"`, expand-to-view output).
+- `src/cursor-compact-tool-display.ts` owns compact one-line TUI rendering for Cursor native replay `read`, `grep`, `find`, `bash`, `edit`, `write`, and `ls` (`renderShell: "self"`, expand-to-view output).
+- `src/cursor-compact-diff-display.ts` owns OpenCode-style syntax-highlighted unified diff preview lines for compact edit/write cards.
+- `src/cursor-compact-file-mutation-display.ts` owns compact edit/write preview assembly from recorded diffs and write content.
 - `src/cursor-native-tool-display-tools.ts` owns native/replay tool definition factories and replay execute wrappers.
 - `src/cursor-native-tool-display-state.ts` owns native replay display state, env gating, and record/consume helpers.
 - `src/cursor-tool-transcript.ts`, `src/cursor-transcript-utils.ts`, `src/cursor-transcript-tool-formatters.ts`, and `src/cursor-tool-names.ts` handle display-only Cursor native tool replay and transcript labels.

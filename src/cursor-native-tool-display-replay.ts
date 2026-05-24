@@ -3,6 +3,12 @@ import { basename, extname } from "node:path";
 import { getLanguageFromPath, highlightCode, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Image, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import {
+	COMPACT_ROW_PADDING,
+	formatCompactEditCall,
+	formatCompactWriteCall,
+} from "./cursor-compact-tool-display.js";
+import { formatCompactSyntaxDiff } from "./cursor-compact-diff-display.js";
 import { resolveCursorEditDiff } from "./cursor-edit-diff.js";
 import { isCursorTaskDisplayEnabled } from "./cursor-task-ui.js";
 import {
@@ -17,6 +23,10 @@ import {
 	getCursorReplaySourceToolName,
 	type CursorReplayToolName,
 } from "./cursor-tool-names.js";
+import {
+	renderCompactCursorReplayCall,
+	renderCompactCursorReplayResult,
+} from "./cursor-compact-tool-display.js";
 
 export const CURSOR_REPLAY_COLLAPSED_PREVIEW_LINES = 8;
 export const CURSOR_REPLAY_PREVIEW_MAX_CHARS = 4000;
@@ -105,12 +115,6 @@ export function getCursorReplayPath(args: Record<string, unknown> | undefined, d
 	return details?.path ?? (typeof argPath === "string" && argPath.trim() ? argPath : "unknown");
 }
 
-function parseUnifiedDiffHunkHeader(line: string): { oldLine: number; newLine: number } | undefined {
-	const match = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/.exec(line);
-	if (!match) return undefined;
-	return { oldLine: Number(match[1]), newLine: Number(match[2]) };
-}
-
 function replaceCursorReplayTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
 }
@@ -164,50 +168,13 @@ function formatCursorReplayOmission(slice: CursorReplayPreviewSlice): string | u
 	return parts.length > 0 ? `... (${parts.join(", ")} truncated)` : undefined;
 }
 
-function formatCursorReplayDiffLine(prefix: string, lineNumber: number, content: string, theme: CursorReplayRenderTheme): string {
-	const rendered = `${prefix}${lineNumber} ${truncateCursorReplayLine(replaceCursorReplayTabs(content))}`;
-	if (prefix === "+") return theme.fg("toolDiffAdded", rendered);
-	if (prefix === "-") return theme.fg("toolDiffRemoved", rendered);
-	return theme.fg("toolDiffContext", rendered);
-}
-
-export function formatCursorReplayDiff(diff: string, theme: CursorReplayRenderTheme, maxLines: number): string {
-	const lines = diff.split("\n");
-	const oldFileIsNull = lines.some((line) => line === "--- /dev/null");
-	const newFileIsNull = lines.some((line) => line === "+++ /dev/null");
-	const rendered: string[] = [];
-	let oldLine = 1;
-	let newLine = 1;
-
-	for (const line of lines) {
-		if (!line || line.startsWith("--- ") || line.startsWith("+++ ")) continue;
-		const hunk = parseUnifiedDiffHunkHeader(line);
-		if (hunk) {
-			oldLine = hunk.oldLine;
-			newLine = hunk.newLine;
-			continue;
-		}
-
-		if (line.startsWith("+")) {
-			if (newFileIsNull) continue;
-			rendered.push(formatCursorReplayDiffLine("+", newLine, line.slice(1), theme));
-			newLine += 1;
-		} else if (line.startsWith("-")) {
-			if (oldFileIsNull && line === "-") continue;
-			rendered.push(formatCursorReplayDiffLine("-", oldLine, line.slice(1), theme));
-			oldLine += 1;
-		} else if (line.startsWith(" ")) {
-			rendered.push(formatCursorReplayDiffLine(" ", newLine, line.slice(1), theme));
-			oldLine += 1;
-			newLine += 1;
-		} else {
-			rendered.push(theme.fg("toolDiffContext", replaceCursorReplayTabs(line)));
-		}
-	}
-
-	const visible = rendered.slice(0, maxLines);
-	if (rendered.length > maxLines) visible.push(theme.fg("muted", `... (${rendered.length - maxLines} more diff lines hidden)`));
-	return visible.join("\n");
+export function formatCursorReplayDiff(
+	diff: string,
+	theme: CursorReplayRenderTheme,
+	maxLines: number,
+	path?: string,
+): string {
+	return formatCompactSyntaxDiff(diff, theme, maxLines, path);
 }
 
 function stripCursorReplayHeader(text: string): string {
@@ -323,16 +290,18 @@ export function renderNativeLookingCursorFileMutationCall(
 	args: Record<string, unknown> | undefined,
 	theme: CursorReplayRenderTheme,
 	isPartial: boolean,
+	cwd?: string,
 ): Text {
 	if (!isPartial) return new Text("", 0, 0);
-	let text = theme.fg("toolTitle", theme.bold(`${toolName} `));
-	const path = typeof args?.path === "string" && args.path.trim() ? args.path : "unknown";
-	text += theme.fg("accent", path);
+	const formatted =
+		toolName === "edit"
+			? formatCompactEditCall(args ?? {}, theme, cwd ?? process.cwd())
+			: formatCompactWriteCall(args ?? {}, theme, cwd ?? process.cwd());
 	if (toolName === "write" && typeof args?.content === "string" && args.content.length > 0) {
 		const lineCount = countDisplayLines(args.content);
-		text += theme.fg("dim", ` (${pluralize(lineCount, "line")})`);
+		return new Text(`${COMPACT_ROW_PADDING}${formatted}${theme.fg("dim", ` (${pluralize(lineCount, "line")})`)}`, 0, 0);
 	}
-	return new Text(text.trimEnd(), 0, 0);
+	return new Text(`${COMPACT_ROW_PADDING}${formatted}`, 0, 0);
 }
 
 function pluralize(count: number, noun: string): string {
@@ -424,7 +393,7 @@ export function renderCursorReplayResult(
 		const title = details.title ?? "edit";
 		let rendered = `${theme.fg("toolTitle", theme.bold(title))} ${theme.fg("accent", getCursorReplayPath(undefined, details))} ${theme.fg("success", summary)}`;
 		const diff = getCursorEditDiff(details);
-		if (diff) rendered += `\n${formatCursorReplayDiff(diff, theme, options.expanded ? 40 : CURSOR_REPLAY_COLLAPSED_PREVIEW_LINES)}`;
+		if (diff) rendered += `\n${formatCursorReplayDiff(diff, theme, options.expanded ? 40 : CURSOR_REPLAY_COLLAPSED_PREVIEW_LINES, getCursorReplayPath(undefined, details))}`;
 		return new Text(rendered, 0, 0);
 	}
 
@@ -467,14 +436,25 @@ export function createCursorReplayOnlyToolDefinition(toolName: CursorReplayToolN
 			`Use this tool only for replaying Cursor SDK ${cursorToolName} results that were already produced by Cursor; it does not execute ${sideEffectDescription}.`,
 		],
 		parameters: cursorReplayToolSchema,
+		renderShell: "self",
 		async execute() {
 			throw new Error(`No recorded Cursor ${cursorToolName} result was available. This replay-only tool does not execute ${sideEffectDescription}.`);
 		},
 		renderCall(args, theme, context) {
-			return renderCursorReplayCall(toolName, args as Record<string, unknown>, theme, context.isPartial);
+			return renderCompactCursorReplayCall(toolName, args as Record<string, unknown>, theme, context);
 		},
 		renderResult(result, options, theme, context) {
-			return renderCursorReplayResult(result, options, theme, context, context.isError);
+			return renderCompactCursorReplayResult(toolName, result, options, theme, context, context.isError, () => {
+				const renderResult = renderCursorReplayResult;
+				return (currentResult, currentOptions, currentTheme, currentContext) =>
+					renderResult(
+						currentResult,
+						currentOptions,
+						currentTheme,
+						currentContext as Parameters<typeof renderCursorReplayResult>[3],
+						currentContext.isError,
+					);
+			});
 		},
 	};
 }

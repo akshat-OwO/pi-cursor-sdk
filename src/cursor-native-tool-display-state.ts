@@ -35,6 +35,7 @@ export function isCursorNativeToolDisplayRuntimeEnabled(): boolean {
 }
 
 export function canRenderCursorToolNatively(toolName: string): boolean {
+	if (!isCursorNativeToolDisplayRequested()) return false;
 	return registeredNativeToolNames.has(toolName);
 }
 

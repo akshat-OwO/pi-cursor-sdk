@@ -25,6 +25,7 @@ import {
 import {
 	type CompactNativeToolName,
 	isCompactNativeCursorToolName,
+	renderCompactFileMutationResult,
 	renderCompactNativeToolCall,
 	renderCompactNativeToolResult,
 } from "./cursor-compact-tool-display.js";
@@ -74,7 +75,7 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 		},
 		renderCall(args, theme, context) {
 			if (isCursorFileMutationToolName(definition.name) && isCursorReplayToolCallId(context.toolCallId)) {
-				return renderNativeLookingCursorFileMutationCall(definition.name, args as Record<string, unknown>, theme, context.isPartial);
+				return renderNativeLookingCursorFileMutationCall(definition.name, args as Record<string, unknown>, theme, context.isPartial, context.cwd);
 			}
 			if (compactDisplay) {
 				return renderCompactNativeToolCall(definition.name as CompactNativeToolName, args as Record<string, unknown>, theme, context);
@@ -85,10 +86,22 @@ export function wrapNativeCursorTool<TParams extends TSchema, TDetails, TState>(
 		renderResult(result, options, theme, context) {
 			const details = asCursorReplayToolDetails(result.details);
 			if (isCursorFileMutationToolName(definition.name) && details?.cursorToolName === definition.name) {
+				if (compactDisplay) {
+					return renderCompactFileMutationResult(
+						definition.name,
+						result,
+						options,
+						theme,
+						context,
+						context.isError,
+						() => renderCursorReplayResult(result, options, theme, context, context.isError),
+					);
+				}
 				return renderCursorReplayResult(result, options, theme, context, context.isError);
 			}
 			if (compactDisplay) {
 				return renderCompactNativeToolResult(
+					definition.name as CompactNativeToolName,
 					result,
 					options,
 					theme,

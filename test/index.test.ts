@@ -687,7 +687,7 @@ describe("extension factory", () => {
 						expandedText: `generateImage Small badge\n\nSaved image: ${imagePath}`,
 					},
 				},
-				{ expanded: false, isPartial: false } as never,
+				{ expanded: true, isPartial: false } as never,
 				{ fg: (_style: string, text: string) => text, bold: (text: string) => text } as never,
 				{ isError: false, showImages: true } as never,
 			);
@@ -711,23 +711,24 @@ describe("extension factory", () => {
 		const cursorTool = pi._tools.find((tool) => tool.name === "cursor");
 
 		const rendered = [
-			cursorTool.renderCall?.({ activityTitle: "Cursor plan", activitySummary: "2 items", totalCount: 2 }, theme, { isPartial: true } as never)?.render(120).join("\n"),
-			cursorTool.renderCall?.({ activityTitle: "Cursor todos", activitySummary: "1/2 completed, 1 pending", totalCount: 2 }, theme, { isPartial: true } as never)?.render(120).join("\n"),
-			cursorTool.renderCall?.({ activityTitle: "Cursor MCP", activitySummary: "external_search", toolName: "external_search" }, theme, { isPartial: true } as never)?.render(120).join("\n"),
+			cursorTool.renderCall?.({ activityTitle: "Cursor plan", activitySummary: "2 items", totalCount: 2 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
+			cursorTool.renderCall?.({ activityTitle: "Cursor todos", activitySummary: "1/2 completed, 1 pending", totalCount: 2 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
+			cursorTool.renderCall?.({ activityTitle: "Cursor MCP", activitySummary: "external_search", toolName: "external_search" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
 		]
 			.filter((entry): entry is string => Boolean(entry))
 			.join("\n");
 
-		expect(rendered).toContain("Cursor plan 2 items");
-		expect(rendered).toContain("Cursor todos 1/2 completed, 1 pending");
-		expect(rendered).toContain("Cursor MCP external_search");
+		expect(rendered).toContain("  → Cursor plan 2 items");
+		expect(rendered).toContain("  → Cursor todos 1/2 completed, 1 pending");
+		expect(rendered).toContain("  → Cursor MCP external_search");
 		expect(rendered).not.toContain("Cursor activity");
 		expect(rendered).not.toContain("cursor_create_plan");
 		expect(rendered).not.toContain("cursor_update_todos");
 		expect(rendered).not.toContain("cursor_mcp");
+		expect(cursorTool.renderShell).toBe("self");
 	});
 
-	it("renders compact read, grep, and find native tool calls without boxed shells", async () => {
+	it("renders compact read, grep, find, bash, edit, write, and ls native tool calls without boxed shells", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi();
@@ -738,18 +739,34 @@ describe("extension factory", () => {
 		const readTool = pi._tools.find((tool) => tool.name === "read");
 		const grepTool = pi._tools.find((tool) => tool.name === "grep");
 		const findTool = pi._tools.find((tool) => tool.name === "find");
+		const bashTool = pi._tools.find((tool) => tool.name === "bash");
+		const editTool = pi._tools.find((tool) => tool.name === "edit");
+		const writeTool = pi._tools.find((tool) => tool.name === "write");
+		const lsTool = pi._tools.find((tool) => tool.name === "ls");
 
-		expect(readTool.renderShell).toBe("self");
-		expect(grepTool.renderShell).toBe("self");
-		expect(findTool.renderShell).toBe("self");
+		for (const tool of [readTool, grepTool, findTool, bashTool, editTool, writeTool, lsTool]) {
+			expect(tool.renderShell).toBe("self");
+		}
 		expect(readTool.renderCall?.({ path: "README.md", limit: 80 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"→ Read README.md [limit=80]",
+			"  → Read README.md [limit=80]",
 		);
 		expect(grepTool.renderCall?.({ pattern: "foo", path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"→ Grep foo in src",
+			'  ✱ Grep "foo" in src',
 		);
 		expect(findTool.renderCall?.({ pattern: "**/*.ts", path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"→ Find **/*.ts in src",
+			'  ✱ Find "**/*.ts" in src',
+		);
+		expect(bashTool.renderCall?.({ command: "npm test" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"  $ npm test",
+		);
+		expect(editTool.renderCall?.({ path: "src/index.ts" }, theme, { isPartial: true, cwd: process.cwd(), toolCallId: "ordinary-edit" } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"  ← Edit src/index.ts",
+		);
+		expect(writeTool.renderCall?.({ path: "README.md" }, theme, { isPartial: true, cwd: process.cwd(), toolCallId: "ordinary-write" } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"  ← Write README.md",
+		);
+		expect(lsTool.renderCall?.({ path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
+			"  → List src",
 		);
 	});
 
@@ -760,25 +777,25 @@ describe("extension factory", () => {
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi);
 		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
-		const options = { expanded: false, isPartial: false } as never;
+		const collapsedOptions = { expanded: false, isPartial: false } as never;
+		const expandedOptions = { expanded: true, isPartial: false } as never;
 		const context = { isError: false, showImages: false } as never;
 
 		const editTool = pi._tools.find((tool) => tool.name === "cursor_edit");
 		const writeTool = pi._tools.find((tool) => tool.name === "cursor_write");
 		const mcpTool = pi._tools.find((tool) => tool.name === "cursor_mcp");
 
-		// Cursor replay-only tools should use pi's default tool shell so they get
-		// the same green/red status card background as native tools.
-		expect(mcpTool.renderShell).toBeUndefined();
+		// Cursor replay-only tools use compact one-line rendering without boxed shells.
+		expect(mcpTool.renderShell).toBe("self");
 
 		const rendered = [
-			editTool.renderCall?.({ path: "src/index.ts" }, theme, { isPartial: true } as never)?.render(120).join("\n"),
+			editTool.renderCall?.({ path: "src/index.ts" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
 			writeTool.renderResult?.(
 				{
 					content: [{ type: "text", text: "write new.txt\n\nCreated 1 lines" }],
 					details: { cursorToolName: "write", path: "new.txt", linesCreated: 1, fileSize: 6, expandedText: "Created 1 lines" },
 				},
-				options,
+				expandedOptions,
 				theme,
 				context,
 			)?.render(120).join("\n"),
@@ -787,7 +804,16 @@ describe("extension factory", () => {
 					content: [{ type: "text", text: "mcp git\n\nstatus" }],
 					details: { cursorToolName: "mcp", title: "Cursor MCP activity", summary: "git", expandedText: "status" },
 				},
-				options,
+				expandedOptions,
+				theme,
+				context,
+			)?.render(120).join("\n"),
+			mcpTool.renderResult?.(
+				{
+					content: [{ type: "text", text: "mcp git\n\nstatus" }],
+					details: { cursorToolName: "mcp", title: "Cursor MCP activity", summary: "git", expandedText: "status" },
+				},
+				collapsedOptions,
 				theme,
 				context,
 			)?.render(120).join("\n"),
@@ -795,7 +821,7 @@ describe("extension factory", () => {
 			.filter((entry): entry is string => Boolean(entry))
 			.join("\n");
 
-		expect(rendered).toContain("edit src/index.ts");
+		expect(rendered).toContain("  ← Edit src/index.ts");
 		expect(rendered).toContain("write new.txt");
 		expect(rendered).not.toContain("Cursor edit");
 		expect(rendered).not.toContain("Cursor write");
@@ -852,14 +878,15 @@ describe("extension factory", () => {
 			.filter((entry): entry is string => Boolean(entry))
 			.join("\n");
 
-		expect(rendered).toContain("edit src/index.ts");
-		expect(rendered).toContain("write new.txt");
-		expect(rendered).toContain("write new.txt (1 line)");
-		expect(rendered).not.toContain("write new.txt (2 lines)");
-		expect(rendered).toContain("<toolDiffRemoved>-1 old line</toolDiffRemoved>");
-		expect(rendered).toContain("<toolDiffAdded>+1 new line</toolDiffAdded>");
-		expect(rendered).toContain("<toolOutput># Title</toolOutput>");
-		expect(rendered).toContain("<toolOutput>Body</toolOutput>");
+		expect(rendered).toContain("  ← Edit src/index.ts");
+		expect(rendered).toContain("<toolDiffRemoved>-</toolDiffRemoved>");
+		expect(rendered).toContain("<toolDiffAdded>+</toolDiffAdded>");
+		expect(rendered).toContain("old line");
+		expect(rendered).toContain("new line");
+		expect(rendered).not.toContain("write new.txt 3 lines");
+		expect(rendered).toContain("  ← Write new.txt (1 line)");
+		expect(rendered).toContain("# Title");
+		expect(rendered).toContain("Body");
 		expect(rendered).not.toContain("Cursor edit");
 		expect(rendered).not.toContain("Cursor write");
 		expect(rendered).not.toContain("cursor_");
@@ -873,10 +900,12 @@ describe("extension factory", () => {
 		await runSessionStartHandlers(pi);
 		const theme = {
 			fg: (style: string, text: string) =>
-				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"].includes(style) ? `<${style}>${text}</${style}>` : text,
+				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "dim", "toolOutput"].includes(style)
+					? `<${style}>${text}</${style}>`
+					: text,
 			bold: (text: string) => text,
 		} as never;
-		const options = { expanded: false, isPartial: false } as never;
+		const options = { expanded: true, isPartial: false } as never;
 		const context = { isError: false, showImages: false } as never;
 
 		const todosTool = pi._tools.find((tool) => tool.name === "cursor_update_todos");
@@ -932,10 +961,13 @@ describe("extension factory", () => {
 			theme,
 			context,
 		)?.render(120).join("\n") ?? "";
-		expect(editRendered).toContain("edit src/index.ts added 1 line, removed 1 line");
+		expect(editRendered).toContain("<dim>← </dim>Edit");
+		expect(editRendered).toContain("src/index.ts");
 		expect(editRendered).not.toContain("Cursor updated");
-		expect(editRendered).toContain("<toolDiffRemoved>-1 old line</toolDiffRemoved>");
-		expect(editRendered).toContain("<toolDiffAdded>+1 new line</toolDiffAdded>");
+		expect(editRendered).toContain("<toolDiffRemoved>-</toolDiffRemoved>");
+		expect(editRendered).toContain("<toolDiffAdded>+</toolDiffAdded>");
+		expect(editRendered).toContain("old line");
+		expect(editRendered).toContain("new line");
 		expect(editRendered).not.toContain("--- a/src/index.ts");
 		expect(editRendered).not.toContain("@@");
 		expect(editRendered).not.toContain("expand for diff");
@@ -955,10 +987,12 @@ describe("extension factory", () => {
 			theme,
 			context,
 		)?.render(120).join("\n") ?? "";
-		expect(createRendered).toContain("edit new.txt created 2 lines");
+		expect(createRendered).toContain("<dim>← </dim>Edit");
+		expect(createRendered).toContain("new.txt");
 		expect(createRendered).not.toContain("Cursor created");
-		expect(createRendered).toContain("<toolDiffAdded>+1 first line</toolDiffAdded>");
-		expect(createRendered).toContain("<toolDiffAdded>+2 second line</toolDiffAdded>");
+		expect(createRendered).toContain("<toolDiffAdded>+</toolDiffAdded>");
+		expect(createRendered).toContain("first line");
+		expect(createRendered).toContain("second line");
 		expect(createRendered).not.toContain("/dev/null");
 		expect(createRendered).not.toContain("@@");
 
@@ -981,9 +1015,12 @@ describe("extension factory", () => {
 			theme,
 			context,
 		)?.render(120).join("\n") ?? "";
-		expect(neutralPathOnlyEditRendered).toContain("Cursor edit .tool-demo/ux-demo.ts added 1 line, removed 1 line");
-		expect(neutralPathOnlyEditRendered).toContain("<toolDiffRemoved>-1 export const value = 1;</toolDiffRemoved>");
-		expect(neutralPathOnlyEditRendered).toContain("<toolDiffAdded>+1 export const value = 2;</toolDiffAdded>");
+		expect(neutralPathOnlyEditRendered).toContain("<dim>← </dim>Edit");
+		expect(neutralPathOnlyEditRendered).toContain(".tool-demo/ux-demo.ts");
+		expect(neutralPathOnlyEditRendered).toContain("<toolDiffRemoved>-</toolDiffRemoved>");
+		expect(neutralPathOnlyEditRendered).toContain("<toolDiffAdded>+</toolDiffAdded>");
+		expect(neutralPathOnlyEditRendered).toContain("export const value = 1;");
+		expect(neutralPathOnlyEditRendered).toContain("export const value = 2;");
 		expect(neutralPathOnlyEditRendered).not.toContain("@@");
 	});
 
@@ -1031,7 +1068,7 @@ describe("extension factory", () => {
 		expect(canRenderCursorToolNatively("read")).toBe(false);
 	});
 
-	it("skips only native Cursor tool wrappers owned by another extension", async () => {
+	it("registers native Cursor tool wrappers even when another extension owns read", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const pi = createMockPi([
@@ -1056,6 +1093,7 @@ describe("extension factory", () => {
 
 		expect(pi._tools.map((tool) => tool.name)).toEqual([
 			CURSOR_ASK_QUESTION_TOOL_NAME,
+			"read",
 			"bash",
 			"edit",
 			"write",
@@ -1073,7 +1111,7 @@ describe("extension factory", () => {
 			"cursor_generate_image",
 			"cursor_mcp",
 		]);
-		expect(canRenderCursorToolNatively("read")).toBe(false);
+		expect(canRenderCursorToolNatively("read")).toBe(true);
 		expect(canRenderCursorToolNatively("bash")).toBe(true);
 		expect(canRenderCursorToolNatively("edit")).toBe(true);
 		expect(canRenderCursorToolNatively("write")).toBe(true);
@@ -1084,7 +1122,7 @@ describe("extension factory", () => {
 		expect(canRenderCursorToolNatively("ls")).toBe(true);
 	});
 
-	it("skips compact read/grep/find replay wrappers when a global extension already owns them", async () => {
+	it("registers native read/grep/find replay wrappers even when a global extension already owns them", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		mockedDiscover.mockResolvedValueOnce([]);
 		const compactExtensionPath = `${process.env.HOME}/.pi/agent/extensions/compact-tool-display/index.ts`;
@@ -1112,20 +1150,15 @@ describe("extension factory", () => {
 			createBuiltinToolInfo("write"),
 			createBuiltinToolInfo("ls"),
 		]);
-		const notify = vi.fn();
 		await extensionFactory(pi);
-		await runSessionStartHandlers(pi, { ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn() } });
+		await runSessionStartHandlers(pi);
 
-		expect(pi._tools.map((tool) => tool.name)).not.toContain("read");
-		expect(pi._tools.map((tool) => tool.name)).not.toContain("grep");
-		expect(pi._tools.map((tool) => tool.name)).not.toContain("find");
-		expect(canRenderCursorToolNatively("read")).toBe(false);
-		expect(canRenderCursorToolNatively("grep")).toBe(false);
-		expect(canRenderCursorToolNatively("find")).toBe(false);
+		expect(pi._tools.map((tool) => tool.name)).toContain("read");
+		expect(pi._tools.map((tool) => tool.name)).toContain("grep");
+		expect(pi._tools.map((tool) => tool.name)).toContain("find");
+		expect(canRenderCursorToolNatively("read")).toBe(true);
+		expect(canRenderCursorToolNatively("grep")).toBe(true);
+		expect(canRenderCursorToolNatively("find")).toBe(true);
 		expect(canRenderCursorToolNatively("bash")).toBe(true);
-		expect(notify).toHaveBeenCalledWith(
-			expect.stringContaining("Cursor native tool replay skipped for read, grep, find"),
-			"warning",
-		);
 	});
 });
