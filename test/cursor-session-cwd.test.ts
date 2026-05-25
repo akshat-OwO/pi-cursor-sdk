@@ -7,7 +7,7 @@ import {
 	__testUtils as cursorSessionCwdTestUtils,
 	getCursorSessionCwd,
 	registerCursorSessionCwd,
-} from "../src/cursor-session-cwd.js";
+} from "../src/session/cursor-session-cwd.js";
 
 function createMockPi() {
 	const handlers = new Map<string, Array<(event: unknown, ctx: { cwd: string }) => void>>();

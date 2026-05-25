@@ -6,43 +6,19 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 
 ## Repository map
 
+Source code lives under modular `src/` folders. See [`src/README.md`](src/README.md) for the directory index.
+
 - `src/index.ts` registers the pi extension, provider, fallback warnings, native replay wrappers, question tool, and pi tool bridge hooks.
-- `src/model-discovery.ts` discovers Cursor models, builds pi model metadata (including `-fast` model variants), stores per-model metadata, and defines fallback models.
-- `src/cursor-provider.ts` streams through local `@cursor/sdk` agents, injects local MCP bridge config, resumes live bridge runs, and sanitizes Cursor SDK errors.
-- `src/cursor-provider-live-run-drain.ts` owns live-run drain/replay mirroring, pre-send continuation, and native replay turn emission.
-- `src/cursor-provider-turn-coordinator.ts` owns SDK delta/step handling, tool completion routing, and trace/native-replay emission during a turn.
-- `src/cursor-sdk-output-filter.ts` suppresses Cursor SDK integrator bootstrap noise from pi's TUI.
-- `src/cursor-edit-diff.ts` owns canonical edit diff fallback resolution for replay/display paths.
-- `src/cursor-record-utils.ts` owns shared record/string-key parsing helpers used across bridge and transcript layers.
-- `src/cursor-partial-content-emitter.ts` owns shared thinking/text block emission for live-run drain and turn coordinator paths.
-- `src/cursor-sensitive-text.ts` owns canonical secret scrubbing for provider errors and native replay display.
-- `src/cursor-transcript-tool-specs.ts` owns the unified per-tool transcript and replay display spec registry.
-- `src/cursor-pi-tool-bridge-types.ts` owns shared bridge/MCP type contracts.
-- `src/cursor-env-boolean.ts` owns canonical env boolean parsing (default and tri-state optional) for bridge diagnostics, flags, and native replay gating.
-- `src/cursor-live-run-coordinator.ts` owns live Cursor run registry/scope matching, queued events, drain leases, idle disposal timers, and release cleanup.
-- `src/cursor-pi-tool-bridge.ts` re-exports bridge registration and snapshot helpers; exposes active pi tools to local Cursor agents through a per-run loopback MCP bridge.
-- `src/cursor-pi-tool-bridge-snapshot.ts` owns bridge snapshot building, env gating, and surface signatures.
-- `src/cursor-pi-tool-bridge-server.ts` owns loopback HTTP routing and run endpoint registry for bridge runs.
-- `src/cursor-pi-tool-bridge-run.ts` owns MCP transport setup, pending bridge calls, pi tool dispatch, cancellation, and run lifecycle.
-- `src/cursor-pi-tool-bridge-abort.ts` owns bridge pi tool execution abort tracking and process signal handling.
-- `src/cursor-pi-tool-bridge-diagnostics.ts` owns bridge debug diagnostics serialization and stderr logging.
-- `src/cursor-pi-tool-bridge-mcp.ts` owns MCP name/schema conversion and pi-to-MCP content helpers for the bridge.
-- `src/cursor-question-tool.ts` owns the bridge-exposed `cursor_ask_question` pi UI tool.
-- `src/cursor-native-tool-display.ts` re-exports native replay display registration and state APIs.
-- `src/cursor-native-tool-display-registration.ts` owns native replay tool registration and model-scoped activation.
-- `src/cursor-native-replay-routing.ts` owns canonical native replay disposition (`queue_replay` / `inactive_trace` / `transcript_trace`) and context-tool partitioning for drain.
-- `src/cursor-native-replay-trace.ts` owns inactive native replay trace formatting (`title: summary`).
-- `src/cursor-context-tools.ts` owns `context.tools` snapshot helpers at provider stream start.
-- `src/cursor-display-text.ts` owns shared single-line sanitization and 240-char truncation for replay/trace display.
-- `src/cursor-native-tool-display-replay.ts` owns replay card rendering and diff/preview formatting.
-- `src/cursor-compact-tool-display.ts` owns compact one-line TUI rendering for Cursor native replay `read`, `grep`, `find`, `bash`, `edit`, `write`, and `ls` (`renderShell: "self"`, expand-to-view output).
-- `src/cursor-compact-diff-display.ts` owns OpenCode-style syntax-highlighted unified diff preview lines for compact edit/write cards.
-- `src/cursor-compact-file-mutation-display.ts` owns compact edit/write preview assembly from recorded diffs and write content.
-- `src/cursor-native-tool-display-tools.ts` owns native/replay tool definition factories and replay execute wrappers.
-- `src/cursor-native-tool-display-state.ts` owns native replay display state, env gating, and record/consume helpers.
-- `src/cursor-tool-transcript.ts`, `src/cursor-transcript-utils.ts`, `src/cursor-transcript-tool-formatters.ts`, and `src/cursor-tool-names.ts` handle display-only Cursor native tool replay and transcript labels.
-- `src/cursor-mcp-timeout-override.ts` owns Cursor SDK MCP call timeout overrides for long-running local MCP tools.
-- `src/context.ts`, `src/context-window-cache.ts`, and `src/bundled-context-windows.ts` handle prompt conversion and context-window caches.
+- `src/provider/` streams through local `@cursor/sdk` agents (including live-run drain, turn coordination, usage accounting, and MCP timeout overrides).
+- `src/bridge/` exposes active pi tools to local Cursor agents through a per-run loopback MCP bridge (snapshot, server, run lifecycle, diagnostics, `cursor_ask_question`).
+- `src/replay/` owns native tool replay display (registration, routing, trace, compact cards, edit diff resolution).
+- `src/transcript/` owns per-tool transcript labels, formatters, and replay display specs.
+- `src/discovery/` discovers Cursor models, fallback snapshots, and context-window caches.
+- `src/context/` handles prompt conversion and `context.tools` snapshot helpers.
+- `src/session/` owns session cwd, Cursor agent lifecycle, and scope keys.
+- `src/task/` owns the task widget UI and turn progress display.
+- `src/settings/` owns agent settings and the `/cursor-settings` command.
+- `src/shared/` owns cross-cutting utilities (env boolean parsing, record helpers, secret scrubbing, SDK output filter, display text truncation).
 - `test/**/*.test.ts` contains Vitest coverage for provider registration, discovery, state, context, bridge, replay, and streaming behavior.
 - `docs/options.md` is the user-facing options reference (commands, env vars, settings, model IDs).
 - `docs/cursor-model-ux-spec.md` is the maintainer design source of truth for Cursor model UX. Keep it aligned with behavior changes.
@@ -66,10 +42,14 @@ This repository is a pi provider extension that registers Cursor SDK-backed mode
 - Package-readiness check: `npm pack --dry-run`
 - Watch tests while developing: `npm run test:watch`
 - Local development run, requires a Cursor key: `CURSOR_API_KEY="your-key" pi -e . --model cursor/composer-2.5`
-- Local extension install (recommended for this repo): symlink the repo to `~/.pi/agent/extensions/cursor-sdk`, run `pnpm install`, then start pi from any project.
+- Local extension install: `npm run pi:package:local` (or `scripts/pi-use-local-cursor-sdk.sh`) writes this checkout into `packages` in `~/.pi/agent/settings.json` and removes remote `pi-cursor-sdk` entries; `npm run pi:package:remote` restores the GitHub package
+- Alternate manual install: symlink the repo to `~/.pi/agent/extensions/cursor-sdk`, run `pnpm install`, then start pi from any project
 - List Cursor models, requires pi and usually a Cursor key: `pi --list-models cursor`
 
-There is no lint or format script in `package.json` at this time.
+- Lint: `npm run lint` (oxlint; `npm run lint:fix` to auto-fix safe issues)
+- Format: `npm run format` (oxfmt; `npm run format:check` in CI)
+- CI: GitHub Actions [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs typecheck, lint, format check, and tests on every pull request
+- IDE: VS Code ([`.vscode/`](.vscode/)) and Zed ([`.zed/`](.zed/)) workspace settings for the Oxc extension
 
 ## Coding conventions
 
@@ -85,7 +65,7 @@ There is no lint or format script in `package.json` at this time.
 Done means:
 
 - The intended behavior or documentation change is complete.
-- `npm test` and `npm run typecheck` pass, unless the change is docs-only and the user asked for minimal validation.
+- `npm test`, `npm run typecheck`, `npm run lint`, and `npm run format:check` pass, unless the change is docs-only and the user asked for minimal validation.
 - `npm pack --dry-run` passes when package metadata, publishable docs, dependencies, or ignored artifacts change.
 - Related README/docs/tests are updated when behavior, commands, user-visible model IDs, flags, or troubleshooting change.
 - No secrets, local API keys, or noisy local state are added.

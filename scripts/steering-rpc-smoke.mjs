@@ -99,7 +99,8 @@ function waitFor(getStdout, predicate, timeoutMs = 300_000) {
 }
 
 function waitForChildClose(child) {
-	if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode ?? 1);
+	if (child.exitCode !== null || child.signalCode !== null)
+		return Promise.resolve(child.exitCode ?? 1);
 	return new Promise((resolve) => {
 		child.once("close", (code) => resolve(code ?? 1));
 	});
@@ -135,7 +136,16 @@ async function terminateChild(child) {
 }
 
 async function runPiRpcSmoke(sessionDir) {
-	const args = ["-e", root, "--model", "cursor/composer-2.5", "--mode", "rpc", "--session-dir", sessionDir];
+	const args = [
+		"-e",
+		root,
+		"--model",
+		"cursor/composer-2.5",
+		"--mode",
+		"rpc",
+		"--session-dir",
+		sessionDir,
+	];
 	const env = {
 		...process.env,
 		PI_CURSOR_SETTING_SOURCES: "none",
@@ -143,7 +153,12 @@ async function runPiRpcSmoke(sessionDir) {
 		PI_CURSOR_PI_TOOL_BRIDGE: "0",
 	};
 
-	const child = spawn("pi", args, { cwd: root, env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+	const child = spawn("pi", args, {
+		cwd: root,
+		env,
+		stdio: ["pipe", "pipe", "pipe"],
+		detached: process.platform !== "win32",
+	});
 	let closed = false;
 	let stdout = "";
 	let stderr = "";
@@ -182,7 +197,11 @@ async function runPiRpcSmoke(sessionDir) {
 			() => stdout,
 			(events) => {
 				const text = assistantText(events);
-				return text.includes("STEER_OK=yes") && text.includes("STEER_CHAIN=ok") && events.some((event) => event.type === "agent_end");
+				return (
+					text.includes("STEER_OK=yes") &&
+					text.includes("STEER_CHAIN=ok") &&
+					events.some((event) => event.type === "agent_end")
+				);
 			},
 		);
 
@@ -227,7 +246,8 @@ async function main() {
 		fail("steering-rpc-smoke: CURSOR_API_KEY is required");
 	}
 
-	const sessionDir = process.env.SMOKE_SESSION_DIR ?? join("/tmp", `pi-cursor-steer-smoke-${Date.now()}`);
+	const sessionDir =
+		process.env.SMOKE_SESSION_DIR ?? join("/tmp", `pi-cursor-steer-smoke-${Date.now()}`);
 	mkdirSync(sessionDir, { recursive: true });
 	console.log(JSON.stringify(await runPiRpcSmoke(sessionDir)));
 }

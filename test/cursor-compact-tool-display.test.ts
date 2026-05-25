@@ -16,15 +16,15 @@ import {
 	renderCompactCursorReplayResult,
 	renderCompactNativeToolCall,
 	renderCompactNativeToolResult,
-} from "../src/cursor-compact-tool-display.js";
+} from "../src/replay/cursor-compact-tool-display.js";
 import {
 	buildCompactOutputPreviewLines,
 	parseCompactBashExitCode,
 	stripCompactBashStatusSuffix,
-} from "../src/cursor-compact-output-display.js";
-import { COMPACT_ERROR_BLOCK_BG_RGB } from "../src/cursor-compact-diff-display.js";
-import { buildCompactFileMutationPreviewText } from "../src/cursor-compact-file-mutation-display.js";
-import { buildCompactDiffPreviewLines } from "../src/cursor-compact-diff-display.js";
+} from "../src/replay/cursor-compact-output-display.js";
+import { COMPACT_ERROR_BLOCK_BG_RGB } from "../src/replay/cursor-compact-diff-display.js";
+import { buildCompactFileMutationPreviewText } from "../src/replay/cursor-compact-file-mutation-display.js";
+import { buildCompactDiffPreviewLines } from "../src/replay/cursor-compact-diff-display.js";
 
 const theme = {
 	fg: (_style: string, text: string) => text,
@@ -35,51 +35,94 @@ const pad = (text: string) => `${COMPACT_ROW_PADDING}${text}`;
 
 describe("cursor-compact-tool-display", () => {
 	it("formats read calls as a single compact line with optional params", () => {
-		expect(formatCompactReadCall({ path: "README.md", limit: 80 }, theme, "/repo")).toBe("→ Read README.md [limit=80]");
-		expect(formatCompactReadCall({ path: "/repo/package.json", limit: 30 }, theme, "/repo")).toBe("→ Read package.json [limit=30]");
-		expect(formatCompactReadCall({ path: "src/index.ts", offset: 10, limit: 20 }, theme, "/repo")).toBe(
-			"→ Read src/index.ts [offset=10, limit=20]",
+		expect(formatCompactReadCall({ path: "README.md", limit: 80 }, theme, "/repo")).toBe(
+			"→ Read README.md [limit=80]",
 		);
+		expect(formatCompactReadCall({ path: "/repo/package.json", limit: 30 }, theme, "/repo")).toBe(
+			"→ Read package.json [limit=30]",
+		);
+		expect(
+			formatCompactReadCall({ path: "src/index.ts", offset: 10, limit: 20 }, theme, "/repo"),
+		).toBe("→ Read src/index.ts [offset=10, limit=20]");
 	});
 
 	it("formats grep calls as a single compact line with optional params", () => {
-		expect(formatCompactGrepCall({ pattern: "registerTool", path: "src" }, theme, "/repo")).toBe('✱ Grep "registerTool" in src');
-		expect(formatCompactGrepCall({ pattern: "foo", path: ".", glob: "*.ts", limit: 50 }, theme, "/repo")).toBe(
-			'✱ Grep "foo" in . [glob=*.ts, limit=50]',
+		expect(formatCompactGrepCall({ pattern: "registerTool", path: "src" }, theme, "/repo")).toBe(
+			'✱ Grep "registerTool" in src',
 		);
-		expect(formatCompactGrepCall({ pattern: "foo", path: "src" }, theme, "/repo", 3)).toBe('✱ Grep "foo" in src (3 matches)');
+		expect(
+			formatCompactGrepCall({ pattern: "foo", path: ".", glob: "*.ts", limit: 50 }, theme, "/repo"),
+		).toBe('✱ Grep "foo" in . [glob=*.ts, limit=50]');
+		expect(formatCompactGrepCall({ pattern: "foo", path: "src" }, theme, "/repo", 3)).toBe(
+			'✱ Grep "foo" in src (3 matches)',
+		);
 	});
 
 	it("formats find calls as a single compact line with optional params", () => {
-		expect(formatCompactFindCall({ pattern: "**/*.test.ts", path: "src" }, theme, "/repo")).toBe('✱ Find "**/*.test.ts" in src');
-		expect(formatCompactFindCall({ pattern: "*.ts", path: ".", limit: 200 }, theme, "/repo")).toBe('✱ Find "*.ts" in . [limit=200]');
-		expect(formatCompactFindCall({ pattern: "*.ts", path: "src" }, theme, "/repo", 1)).toBe('✱ Find "*.ts" in src (1 match)');
+		expect(formatCompactFindCall({ pattern: "**/*.test.ts", path: "src" }, theme, "/repo")).toBe(
+			'✱ Find "**/*.test.ts" in src',
+		);
+		expect(formatCompactFindCall({ pattern: "*.ts", path: ".", limit: 200 }, theme, "/repo")).toBe(
+			'✱ Find "*.ts" in . [limit=200]',
+		);
+		expect(formatCompactFindCall({ pattern: "*.ts", path: "src" }, theme, "/repo", 1)).toBe(
+			'✱ Find "*.ts" in src (1 match)',
+		);
 	});
 
 	it("formats bash, edit, write, and ls calls in OpenCode style", () => {
 		expect(formatCompactBashCall({ command: "npm test" }, theme, "/repo")).toBe("$ npm test");
-		expect(formatCompactBashCall({ command: "sleep 5", timeout: 30 }, theme, "/repo")).toBe("$ sleep 5 [timeout=30]");
-		expect(formatCompactBashCall({ command: "npm test" }, theme, "/repo", { exitCode: 0, durationMs: 1200 })).toBe(
-			"$ npm test (exit 0 · 1.2s)",
+		expect(formatCompactBashCall({ command: "sleep 5", timeout: 30 }, theme, "/repo")).toBe(
+			"$ sleep 5 [timeout=30]",
 		);
-		expect(formatCompactEditCall({ path: "src/index.ts" }, theme, "/repo")).toBe("← Edit src/index.ts");
+		expect(
+			formatCompactBashCall({ command: "npm test" }, theme, "/repo", {
+				exitCode: 0,
+				durationMs: 1200,
+			}),
+		).toBe("$ npm test (exit 0 · 1.2s)");
+		expect(formatCompactEditCall({ path: "src/index.ts" }, theme, "/repo")).toBe(
+			"← Edit src/index.ts",
+		);
 		expect(formatCompactWriteCall({ path: "README.md" }, theme, "/repo")).toBe("← Write README.md");
-		expect(formatCompactLsCall({ path: "src", limit: 50 }, theme, "/repo")).toBe("→ List src [limit=50]");
-		expect(formatCompactLsCall({ path: "src" }, theme, "/repo", 12)).toBe("→ List src (12 entries)");
+		expect(formatCompactLsCall({ path: "src", limit: 50 }, theme, "/repo")).toBe(
+			"→ List src [limit=50]",
+		);
+		expect(formatCompactLsCall({ path: "src" }, theme, "/repo", 12)).toBe(
+			"→ List src (12 entries)",
+		);
 	});
 
 	it("formats cursor activity replay calls compactly", () => {
-		expect(formatCompactCursorReplayCall("cursor", { activityTitle: "Cursor plan", activitySummary: "2 items" }, theme, "/repo")).toBe(
-			"→ Cursor plan 2 items",
-		);
-		expect(formatCompactCursorReplayCall("cursor_mcp", { toolName: "external_search" }, theme, "/repo")).toBe("→ Cursor MCP external_search");
-		expect(formatCompactCursorReplayCall("cursor_delete", { path: "src/old.ts" }, theme, "/repo")).toBe("→ Delete src/old.ts");
+		expect(
+			formatCompactCursorReplayCall(
+				"cursor",
+				{ activityTitle: "Cursor plan", activitySummary: "2 items" },
+				theme,
+				"/repo",
+			),
+		).toBe("→ Cursor plan 2 items");
+		expect(
+			formatCompactCursorReplayCall("cursor_mcp", { toolName: "external_search" }, theme, "/repo"),
+		).toBe("→ Cursor MCP external_search");
+		expect(
+			formatCompactCursorReplayCall("cursor_delete", { path: "src/old.ts" }, theme, "/repo"),
+		).toBe("→ Delete src/old.ts");
 	});
 
 	it("renders compact read/grep/find calls through pi tool renderers with padding", () => {
-		const readCall = renderCompactNativeToolCall("read", { path: "README.md", limit: 80 }, theme, { cwd: "/repo" });
-		const grepCall = renderCompactNativeToolCall("grep", { pattern: "foo", path: "src" }, theme, { cwd: "/repo" });
-		const findCall = renderCompactNativeToolCall("find", { pattern: "**/*.ts", path: "src" }, theme, { cwd: "/repo" });
+		const readCall = renderCompactNativeToolCall("read", { path: "README.md", limit: 80 }, theme, {
+			cwd: "/repo",
+		});
+		const grepCall = renderCompactNativeToolCall("grep", { pattern: "foo", path: "src" }, theme, {
+			cwd: "/repo",
+		});
+		const findCall = renderCompactNativeToolCall(
+			"find",
+			{ pattern: "**/*.ts", path: "src" },
+			theme,
+			{ cwd: "/repo" },
+		);
 
 		expect(readCall.render(120).join("\n").trimEnd()).toBe(pad("→ Read README.md [limit=80]"));
 		expect(grepCall.render(120).join("\n").trimEnd()).toBe(pad('✱ Grep "foo" in src'));
@@ -127,7 +170,9 @@ describe("cursor-compact-tool-display", () => {
 			false,
 			() => undefined,
 		);
-		expect(collapsedGrep.render(120).join("\n").trimEnd()).toBe(pad('✱ Grep "match" in src (2 matches)'));
+		expect(collapsedGrep.render(120).join("\n").trimEnd()).toBe(
+			pad('✱ Grep "match" in src (2 matches)'),
+		);
 	});
 
 	it("shows collapsed bash and ls rows with result metadata", () => {
@@ -292,13 +337,19 @@ describe("cursor-compact-tool-display", () => {
 			false,
 			() => undefined,
 		);
-		expect(collapsedImage.render(120).join("\n").trimEnd()).toBe(pad("[image loaded — expand to view]"));
+		expect(collapsedImage.render(120).join("\n").trimEnd()).toBe(
+			pad("[image loaded — expand to view]"),
+		);
 	});
 
 	it("shows collapsed edit and write previews without summary headers", () => {
 		const diffTheme = {
 			fg: (style: string, text: string) =>
-				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "toolOutput", "muted"].includes(style) ? `<${style}>${text}</${style}>` : text,
+				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "toolOutput", "muted"].includes(
+					style,
+				)
+					? `<${style}>${text}</${style}>`
+					: text,
 			bg: (style: string, text: string) => (style === "selectedBg" ? `<bg>${text}</bg>` : text),
 			bold: (text: string) => text,
 		};
@@ -329,7 +380,11 @@ describe("cursor-compact-tool-display", () => {
 			"write",
 			{
 				content: [{ type: "text", text: "write README.md\n\nCreated 2 lines" }],
-				details: { cursorToolName: "write", path: "README.md", fileContentAfterWrite: "# Title\n\nBody" },
+				details: {
+					cursorToolName: "write",
+					path: "README.md",
+					fileContentAfterWrite: "# Title\n\nBody",
+				},
 			},
 			{ path: "README.md", content: "# Title\n\nBody" },
 			diffTheme,
@@ -348,7 +403,12 @@ describe("cursor-compact-tool-display", () => {
 			},
 			{ expanded: false, isPartial: false },
 			diffTheme,
-			{ cwd: "/repo", isError: false, showImages: true, args: { path: "README.md", content: "hello\nworld" } },
+			{
+				cwd: "/repo",
+				isError: false,
+				showImages: true,
+				args: { path: "README.md", content: "hello\nworld" },
+			},
 			false,
 			() => undefined,
 		);
@@ -365,7 +425,9 @@ describe("cursor-compact-tool-display", () => {
 	it("formats native edit unified diffs without raw diff headers", () => {
 		const diffTheme = {
 			fg: (style: string, text: string) =>
-				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "muted"].includes(style) ? `<${style}>${text}</${style}>` : text,
+				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "muted"].includes(style)
+					? `<${style}>${text}</${style}>`
+					: text,
 			bg: (style: string, text: string) => (style === "selectedBg" ? `<bg>${text}</bg>` : text),
 			bold: (text: string) => text,
 		};
@@ -393,7 +455,14 @@ describe("cursor-compact-tool-display", () => {
 	it("applies OpenCode-style block and per-line backgrounds to compact diff previews", () => {
 		const diffTheme = {
 			fg: (style: string, text: string) =>
-				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "muted", "dim", "toolOutput"].includes(style)
+				[
+					"toolDiffAdded",
+					"toolDiffRemoved",
+					"toolDiffContext",
+					"muted",
+					"dim",
+					"toolOutput",
+				].includes(style)
 					? `<${style}>${text}</${style}>`
 					: text,
 			bold: (text: string) => text,
@@ -406,7 +475,11 @@ describe("cursor-compact-tool-display", () => {
 			8,
 			"README.md",
 		);
-		const rendered = renderCompactFileMutationBlock("← Write README.md (2 lines)", previewLines, diffTheme).render(120);
+		const rendered = renderCompactFileMutationBlock(
+			"← Write README.md (2 lines)",
+			previewLines,
+			diffTheme,
+		).render(120);
 		expect(rendered[0]).toMatch(new RegExp(`^${blockBg.replace(/\[/g, "\\[")}  `));
 		expect(rendered[0]).toMatch(/\x1b\[49m$/);
 		expect(rendered[1]).toMatch(new RegExp(`^${blockBg.replace(/\[/g, "\\[")}  `));
@@ -424,12 +497,21 @@ describe("cursor-compact-tool-display", () => {
 	it("uses the same block styling for expanded edit and write previews", () => {
 		const diffTheme = {
 			fg: (style: string, text: string) =>
-				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "muted", "dim", "toolOutput"].includes(style)
+				[
+					"toolDiffAdded",
+					"toolDiffRemoved",
+					"toolDiffContext",
+					"muted",
+					"dim",
+					"toolOutput",
+				].includes(style)
 					? `<${style}>${text}</${style}>`
 					: text,
 			bold: (text: string) => text,
 		};
-		const diff = "--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1,50 +1,50 @@\n" + Array.from({ length: 50 }, (_, i) => (i % 2 === 0 ? `-old${i}` : `+new${i}`)).join("\n");
+		const diff =
+			"--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1,50 +1,50 @@\n" +
+			Array.from({ length: 50 }, (_, i) => (i % 2 === 0 ? `-old${i}` : `+new${i}`)).join("\n");
 		const expandedEdit = renderCompactNativeToolResult(
 			"edit",
 			{

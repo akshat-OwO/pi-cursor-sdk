@@ -31,13 +31,28 @@ vi.mock("@cursor/sdk", () => {
 });
 
 import { Agent, createAgentPlatform } from "@cursor/sdk";
-import { __testUtils as cursorSessionCwdTestUtils } from "../../src/cursor-session-cwd.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../../src/cursor-provider.js";
-import { registerCursorPiToolBridge, __testUtils as cursorPiToolBridgeTestUtils } from "../../src/cursor-pi-tool-bridge.js";
-import { __testUtils as modelDiscoveryTestUtils } from "../../src/model-discovery.js";
-import { __testUtils as nativeToolDisplayTestUtils, registerCursorNativeToolDisplay } from "../../src/cursor-native-tool-display.js";
+import { __testUtils as cursorSessionCwdTestUtils } from "../../src/session/cursor-session-cwd.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../../src/provider/cursor-provider.js";
+import {
+	registerCursorPiToolBridge,
+	__testUtils as cursorPiToolBridgeTestUtils,
+} from "../../src/bridge/cursor-pi-tool-bridge.js";
+import { __testUtils as modelDiscoveryTestUtils } from "../../src/discovery/model-discovery.js";
+import {
+	__testUtils as nativeToolDisplayTestUtils,
+	registerCursorNativeToolDisplay,
+} from "../../src/replay/cursor-native-tool-display.js";
 import type { ModelListItem, SendOptions } from "@cursor/sdk";
-import type { AssistantMessage, AssistantMessageEvent, Context, Model, ToolCall } from "@earendil-works/pi-ai";
+import type {
+	AssistantMessage,
+	AssistantMessageEvent,
+	Context,
+	Model,
+	ToolCall,
+} from "@earendil-works/pi-ai";
 import type { ExtensionContext, ToolDefinition, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 
@@ -46,19 +61,34 @@ export const mockedCreate = vi.mocked(Agent.create);
 export const mockedCreateAgentPlatform = vi.mocked(createAgentPlatform);
 
 export type RegisteredTool = ToolDefinition<TSchema, unknown, unknown>;
-export type TestExtensionContext = Pick<ExtensionContext, "cwd" | "hasUI"> & { ui: Pick<ExtensionContext["ui"], "notify"> };
+export type TestExtensionContext = Pick<ExtensionContext, "cwd" | "hasUI"> & {
+	ui: Pick<ExtensionContext["ui"], "notify">;
+};
 export type TestEventHandler = (event: unknown, ctx: TestExtensionContext) => Promise<void> | void;
 
-export function createBuiltinToolInfo(name: string, parameters: TSchema = Type.Object({}), description = ""): ToolInfo {
+export function createBuiltinToolInfo(
+	name: string,
+	parameters: TSchema = Type.Object({}),
+	description = "",
+): ToolInfo {
 	return {
 		name,
 		description,
 		parameters,
-		sourceInfo: { source: "builtin", path: `<builtin:${name}>`, scope: "temporary", origin: "top-level" },
+		sourceInfo: {
+			source: "builtin",
+			path: `<builtin:${name}>`,
+			scope: "temporary",
+			origin: "top-level",
+		},
 	};
 }
 
-export function createBridgeToolInfo(name: string, parameters: TSchema = Type.Object({}), description = `${name} tool`): ToolInfo {
+export function createBridgeToolInfo(
+	name: string,
+	parameters: TSchema = Type.Object({}),
+	description = `${name} tool`,
+): ToolInfo {
 	return {
 		name,
 		description,
@@ -117,13 +147,22 @@ export function makeAssistantMessage(text = "Done", timestamp = 2): AssistantMes
 		api: "cursor-sdk",
 		provider: "cursor",
 		model: "test-model",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
 		stopReason: "stop",
 		timestamp,
 	};
 }
 
-export async function collectEvents(stream: ReturnType<typeof streamCursor>): Promise<AssistantMessageEvent[]> {
+export async function collectEvents(
+	stream: ReturnType<typeof streamCursor>,
+): Promise<AssistantMessageEvent[]> {
 	const events: AssistantMessageEvent[] = [];
 	for await (const event of stream) {
 		events.push(event);
@@ -132,12 +171,19 @@ export async function collectEvents(stream: ReturnType<typeof streamCursor>): Pr
 }
 
 export type AssistantStreamEventType = AssistantMessageEvent["type"];
-export type AssistantStreamEvent<TType extends AssistantStreamEventType> = Extract<AssistantMessageEvent, { type: TType }>;
+export type AssistantStreamEvent<TType extends AssistantStreamEventType> = Extract<
+	AssistantMessageEvent,
+	{ type: TType }
+>;
 export type CursorDeltaHandler = NonNullable<SendOptions["onDelta"]>;
 export type CursorStepHandler = NonNullable<SendOptions["onStep"]>;
 export type CursorToolStreamEventType = "toolcall_start" | "toolcall_delta" | "toolcall_end";
 
-export const CURSOR_TOOL_STREAM_EVENT_TYPES = new Set<AssistantStreamEventType>(["toolcall_start", "toolcall_delta", "toolcall_end"]);
+export const CURSOR_TOOL_STREAM_EVENT_TYPES = new Set<AssistantStreamEventType>([
+	"toolcall_start",
+	"toolcall_delta",
+	"toolcall_end",
+]);
 
 export function isEventType<TType extends AssistantStreamEventType>(
 	event: AssistantMessageEvent,
@@ -147,18 +193,30 @@ export function isEventType<TType extends AssistantStreamEventType>(
 }
 
 export function collectTextDeltas(events: readonly AssistantMessageEvent[]): string {
-	return events.filter((event): event is AssistantStreamEvent<"text_delta"> => isEventType(event, "text_delta")).map((event) => event.delta).join("");
+	return events
+		.filter((event): event is AssistantStreamEvent<"text_delta"> =>
+			isEventType(event, "text_delta"),
+		)
+		.map((event) => event.delta)
+		.join("");
 }
 
 export function collectThinkingDeltas(events: readonly AssistantMessageEvent[]): string {
-	return events.filter((event): event is AssistantStreamEvent<"thinking_delta"> => isEventType(event, "thinking_delta")).map((event) => event.delta).join("");
+	return events
+		.filter((event): event is AssistantStreamEvent<"thinking_delta"> =>
+			isEventType(event, "thinking_delta"),
+		)
+		.map((event) => event.delta)
+		.join("");
 }
 
 export function getRequiredEvent<TType extends AssistantStreamEventType>(
 	events: readonly AssistantMessageEvent[],
 	type: TType,
 ): AssistantStreamEvent<TType> {
-	const event = events.find((candidate): candidate is AssistantStreamEvent<TType> => isEventType(candidate, type));
+	const event = events.find((candidate): candidate is AssistantStreamEvent<TType> =>
+		isEventType(candidate, type),
+	);
 	if (!event) throw new Error(`Expected ${type} event`);
 	return event;
 }
@@ -170,23 +228,34 @@ export function getEventsOfType<TType extends AssistantStreamEventType>(
 	return events.filter((event): event is AssistantStreamEvent<TType> => isEventType(event, type));
 }
 
-export function hasEventType(events: readonly AssistantMessageEvent[], type: AssistantStreamEventType): boolean {
+export function hasEventType(
+	events: readonly AssistantMessageEvent[],
+	type: AssistantStreamEventType,
+): boolean {
 	return events.some((event) => event.type === type);
 }
 
-export function isCursorToolStreamEvent(event: AssistantMessageEvent): event is AssistantStreamEvent<CursorToolStreamEventType> {
+export function isCursorToolStreamEvent(
+	event: AssistantMessageEvent,
+): event is AssistantStreamEvent<CursorToolStreamEventType> {
 	return CURSOR_TOOL_STREAM_EVENT_TYPES.has(event.type);
 }
 
-export function getDoneEvent(events: readonly AssistantMessageEvent[]): AssistantStreamEvent<"done"> {
+export function getDoneEvent(
+	events: readonly AssistantMessageEvent[],
+): AssistantStreamEvent<"done"> {
 	return getRequiredEvent(events, "done");
 }
 
-export function getErrorEvent(events: readonly AssistantMessageEvent[]): AssistantStreamEvent<"error"> {
+export function getErrorEvent(
+	events: readonly AssistantMessageEvent[],
+): AssistantStreamEvent<"error"> {
 	return getRequiredEvent(events, "error");
 }
 
-export function getTextEndEvent(events: readonly AssistantMessageEvent[]): AssistantStreamEvent<"text_end"> {
+export function getTextEndEvent(
+	events: readonly AssistantMessageEvent[],
+): AssistantStreamEvent<"text_end"> {
 	return getRequiredEvent(events, "text_end");
 }
 
@@ -219,7 +288,9 @@ export interface NativeToolDisplayTestPi {
 	runEventHandlers: (event: string, ctx?: Record<string, unknown>) => Promise<void>;
 }
 
-export async function createNativeToolDisplayPiForTest(registeredTools: RegisteredTool[] = []): Promise<NativeToolDisplayTestPi> {
+export async function createNativeToolDisplayPiForTest(
+	registeredTools: RegisteredTool[] = [],
+): Promise<NativeToolDisplayTestPi> {
 	const handlers = new Map<string, TestEventHandler[]>();
 	let activeToolNames = ["read", "bash", "edit", "write"];
 	const notify = vi.fn();
@@ -243,7 +314,12 @@ export async function createNativeToolDisplayPiForTest(registeredTools: Register
 					name: tool.name,
 					description: tool.description,
 					parameters: tool.parameters,
-					sourceInfo: { source: "test", path: "cursor-native-tool-display-test", scope: "temporary", origin: "top-level" },
+					sourceInfo: {
+						source: "test",
+						path: "cursor-native-tool-display-test",
+						scope: "temporary",
+						origin: "top-level",
+					},
 				});
 			}
 			return [...toolsByName.values()];
@@ -268,7 +344,9 @@ export async function createNativeToolDisplayPiForTest(registeredTools: Register
 	};
 }
 
-export async function registerNativeToolDisplayForTest(registeredTools: RegisteredTool[]): Promise<void> {
+export async function registerNativeToolDisplayForTest(
+	registeredTools: RegisteredTool[],
+): Promise<void> {
 	await createNativeToolDisplayPiForTest(registeredTools);
 }
 
@@ -308,7 +386,11 @@ export const cursorModelItems: ModelListItem[] = [
 		displayName: "Opus 4.7",
 		parameters: [
 			{ id: "context", displayName: "Context", values: [{ value: "1m" }] },
-			{ id: "effort", displayName: "Effort", values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }] },
+			{
+				id: "effort",
+				displayName: "Effort",
+				values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }],
+			},
 			{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
 		],
 		variants: [
@@ -328,7 +410,11 @@ export const cursorModelItems: ModelListItem[] = [
 		displayName: "Sonnet 4.6",
 		parameters: [
 			{ id: "context", displayName: "Context", values: [{ value: "1m" }] },
-			{ id: "effort", displayName: "Effort", values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }] },
+			{
+				id: "effort",
+				displayName: "Effort",
+				values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }],
+			},
 			{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
 		],
 		variants: [

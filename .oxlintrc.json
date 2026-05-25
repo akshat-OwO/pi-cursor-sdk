@@ -1,0 +1,66 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "import", "promise"],
+	"env": {
+		"builtin": true
+	},
+	"categories": {
+		"correctness": "error",
+		"suspicious": "warn",
+		"perf": "warn"
+	},
+	"rules": {
+		"eslint/no-unused-vars": [
+			"error",
+			{
+				"argsIgnorePattern": "^_",
+				"varsIgnorePattern": "^_",
+				"caughtErrorsIgnorePattern": "^_"
+			}
+		],
+		"typescript/no-explicit-any": "warn",
+		"unicorn/prefer-node-protocol": "error",
+		"import/no-cycle": "off",
+		"oxc/no-map-spread": "off",
+		"eslint/no-underscore-dangle": [
+			"warn",
+			{
+				"allow": ["__testUtils", "__cursorAgentSettingsTestUtils"],
+				"allowAfterThis": false,
+				"allowAfterSuper": false,
+				"enforceInMethodNames": false
+			}
+		],
+		"eslint/no-await-in-loop": "off",
+		"promise/always-return": "off",
+		"unicorn/no-array-sort": "off"
+	},
+	"ignorePatterns": ["dist/**", "coverage/**", "node_modules/**"],
+	"overrides": [
+		{
+			"files": ["test/**/*.{ts,tsx}"],
+			"plugins": [],
+			"rules": {
+				"eslint/no-unused-vars": "off",
+				"typescript/no-explicit-any": "off",
+				"vitest/require-mock-type-parameters": "off",
+				"eslint/no-control-regex": "off",
+				"eslint/no-useless-escape": "off"
+			}
+		},
+		{
+			"files": ["scripts/**/*.{mjs,js,cjs}"],
+			"rules": {
+				"eslint/no-unused-vars": "warn",
+				"unicorn/prefer-node-protocol": "off",
+				"eslint/no-useless-escape": "off"
+			}
+		},
+		{
+			"files": ["**/*.generated.ts"],
+			"rules": {
+				"eslint/no-unused-vars": "off"
+			}
+		}
+	]
+}

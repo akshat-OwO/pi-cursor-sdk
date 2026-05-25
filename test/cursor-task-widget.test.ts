@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { completeCursorTask, onCursorTaskTurnStart, startCursorTask } from "../src/cursor-task-ui.js";
-import { cursorTaskWidget } from "../src/cursor-task-widget.js";
-import { resetCursorTaskWidgetForTest } from "../src/cursor-task-widget-registration.js";
+import {
+	completeCursorTask,
+	onCursorTaskTurnStart,
+	startCursorTask,
+} from "../src/task/cursor-task-ui.js";
+import { cursorTaskWidget } from "../src/task/cursor-task-widget.js";
+import { resetCursorTaskWidgetForTest } from "../src/task/cursor-task-widget-registration.js";
 
 describe("cursor-task-widget", () => {
 	beforeEach(() => {
@@ -20,7 +24,9 @@ describe("cursor-task-widget", () => {
 		startCursorTask("task-1", "Review changes");
 		cursorTaskWidget.update();
 
-		expect(setWidget).toHaveBeenCalledWith("cursor-tasks", expect.any(Function), { placement: "aboveEditor" });
+		expect(setWidget).toHaveBeenCalledWith("cursor-tasks", expect.any(Function), {
+			placement: "aboveEditor",
+		});
 		expect(setStatus).toHaveBeenCalledWith("cursor-tasks", "1 Cursor task running");
 	});
 

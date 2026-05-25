@@ -11,7 +11,10 @@ import {
 	createNativeToolDisplayPiForTest,
 	type CursorDeltaHandler,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
 
 const CURSOR_MODEL = makeModel();
 
@@ -66,7 +69,9 @@ describe("native replay stress", () => {
 		});
 
 		const context = makeContext();
-		context.tools = pi.getActiveTools().map((name) => ({ name, description: name, parameters: Type.Object({}) }));
+		context.tools = pi
+			.getActiveTools()
+			.map((name) => ({ name, description: name, parameters: Type.Object({}) }));
 		const events = await collectEvents(streamCursor(CURSOR_MODEL, context, { apiKey: "test-key" }));
 		expect(hasEventType(events, "toolcall_start")).toBe(true);
 	});
@@ -154,7 +159,11 @@ describe("native replay stress", () => {
 				opts.onDelta({
 					update: {
 						type: "tool-call-completed",
-						toolCall: { name: "find", args: { pattern: "**/*", path: "." }, result: { status: "success", value: {} } },
+						toolCall: {
+							name: "find",
+							args: { pattern: "**/*", path: "." },
+							result: { status: "success", value: {} },
+						},
 						callId: "find-1",
 					},
 				});

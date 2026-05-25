@@ -57,11 +57,11 @@ pi --model cursor/gpt-5.5@1m:medium          # thinking suffix
 pi --model cursor/gpt-5.5@1m --thinking medium
 ```
 
-| Suffix / pattern | Meaning |
-| --- | --- |
-| `cursor/…` | Cursor provider from this extension |
-| `@1m`, `@272k`, `@300k` | Context-window variants from the SDK catalog |
-| `-fast` | Fast mode variant (`fast=true`) |
+| Suffix / pattern             | Meaning                                                              |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `cursor/…`                   | Cursor provider from this extension                                  |
+| `@1m`, `@272k`, `@300k`      | Context-window variants from the SDK catalog                         |
+| `-fast`                      | Fast mode variant (`fast=true`)                                      |
 | `:medium`, `:high`, `:xhigh` | Pi thinking level when the SDK exposes a controllable thinking param |
 
 `thinking=no` in `--list-models` means pi cannot control thinking for that model—not that the model cannot think. Cursor may still emit thinking deltas that pi renders natively.
@@ -74,13 +74,13 @@ All slash commands, environment variables, and settings in one place: **[docs/op
 
 Quick reference:
 
-| What | How |
-| --- | --- |
-| Refresh model catalog | `/cursor-refresh-models` |
-| Compact replay tool rows | `/cursor-settings` or `cursorCompactToolDisplay` in settings |
-| Disable pi→Cursor tool bridge | `PI_CURSOR_PI_TOOL_BRIDGE=0` |
-| Narrow Cursor settings/MCP load | `PI_CURSOR_SETTING_SOURCES=project,user,plugins` |
-| Disable native replay cards | `PI_CURSOR_NATIVE_TOOL_DISPLAY=0` |
+| What                            | How                                                          |
+| ------------------------------- | ------------------------------------------------------------ |
+| Refresh model catalog           | `/cursor-refresh-models`                                     |
+| Compact replay tool rows        | `/cursor-settings` or `cursorCompactToolDisplay` in settings |
+| Disable pi→Cursor tool bridge   | `PI_CURSOR_PI_TOOL_BRIDGE=0`                                 |
+| Narrow Cursor settings/MCP load | `PI_CURSOR_SETTING_SOURCES=project,user,plugins`             |
+| Disable native replay cards     | `PI_CURSOR_NATIVE_TOOL_DISPLAY=0`                            |
 
 ## How it works (short)
 
@@ -99,13 +99,13 @@ Details: [docs/cursor-native-tool-replay.md](docs/cursor-native-tool-replay.md).
 
 ## Troubleshooting
 
-| Symptom | Fix |
-| --- | --- |
-| Models listed but runs fail | `/login` with Cursor key, then `/cursor-refresh-models` |
-| No Cursor models | `pi list` — reinstall if missing |
-| Cursor app rules/MCP missing | Check `PI_CURSOR_SETTING_SOURCES` is not `none` |
+| Symptom                      | Fix                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| Models listed but runs fail  | `/login` with Cursor key, then `/cursor-refresh-models`                                          |
+| No Cursor models             | `pi list` — reinstall if missing                                                                 |
+| Cursor app rules/MCP missing | Check `PI_CURSOR_SETTING_SOURCES` is not `none`                                                  |
 | Pi extension tool not called | Tool must be active in session; set `PI_CURSOR_EXPOSE_BUILTIN_TOOLS=1` for overlapping built-ins |
-| MCP timeout | Default raised to 3600s; override with `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` |
+| MCP timeout                  | Default raised to 3600s; override with `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS`                      |
 
 ## Development
 
@@ -115,6 +115,19 @@ npm test
 npm run typecheck
 CURSOR_API_KEY="your-key" pi -e . --model cursor/composer-2.5
 ```
+
+### Pi settings: local checkout vs remote package
+
+Use these when developing this repo and you want pi to load **this checkout** instead of the GitHub package (or the reverse):
+
+| Goal                                               | Command                                                              |
+| -------------------------------------------------- | -------------------------------------------------------------------- |
+| Use this repo (global `~/.pi/agent/settings.json`) | `npm run pi:package:local` or `scripts/pi-use-local-cursor-sdk.sh`   |
+| Use GitHub package (remove local path)             | `npm run pi:package:remote` or `scripts/pi-use-remote-cursor-sdk.sh` |
+| Project-local `.pi/settings.json`                  | Add `--project` / `-l` to either script                              |
+| Both global and project settings                   | Add `--both`                                                         |
+
+Remote source defaults to `https://github.com/akshat-OwO/pi-cursor-sdk`. Override with `PI_CURSOR_SDK_PACKAGE_REMOTE` or `--remote <source>`.
 
 Maintainer docs: [docs/README.md](docs/README.md).
 

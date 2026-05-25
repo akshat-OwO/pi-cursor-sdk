@@ -4,7 +4,7 @@ import {
 	applyCursorApproximateUsage,
 	estimateCursorAssistantSessionOutputTokens,
 	estimateCursorContextTotalTokens,
-} from "../src/cursor-usage-accounting.js";
+} from "../src/provider/cursor-usage-accounting.js";
 
 function makeModel(): Model<"cursor-sdk"> {
 	return {
@@ -54,8 +54,12 @@ describe("cursor usage accounting", () => {
 		]);
 
 		expect(estimateCursorAssistantSessionOutputTokens(textOnly)).toBeGreaterThan(0);
-		expect(estimateCursorAssistantSessionOutputTokens(withThinking)).toBeGreaterThan(estimateCursorAssistantSessionOutputTokens(textOnly));
-		expect(estimateCursorAssistantSessionOutputTokens(withToolCall)).toBeGreaterThan(estimateCursorAssistantSessionOutputTokens(textOnly));
+		expect(estimateCursorAssistantSessionOutputTokens(withThinking)).toBeGreaterThan(
+			estimateCursorAssistantSessionOutputTokens(textOnly),
+		);
+		expect(estimateCursorAssistantSessionOutputTokens(withToolCall)).toBeGreaterThan(
+			estimateCursorAssistantSessionOutputTokens(textOnly),
+		);
 	});
 
 	it("applies pi session input/output estimates while deriving totalTokens from replayable context", () => {
@@ -76,7 +80,9 @@ describe("cursor usage accounting", () => {
 		expect(partial.usage.output).toBe(estimateCursorAssistantSessionOutputTokens(partial));
 		expect(partial.usage.cacheRead).toBe(0);
 		expect(partial.usage.cacheWrite).toBe(0);
-		expect(partial.usage.totalTokens).toBe(estimateCursorContextTotalTokens(partial, model, context));
+		expect(partial.usage.totalTokens).toBe(
+			estimateCursorContextTotalTokens(partial, model, context),
+		);
 		expect(partial.usage.totalTokens).toBeGreaterThan(partial.usage.input);
 	});
 });

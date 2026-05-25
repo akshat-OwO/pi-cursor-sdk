@@ -2,8 +2,16 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CURSOR_REPLAY_ACTIVITY_TOOL_NAME, isExcludedFromCursorBridgeExposure } from "../src/cursor-tool-names.js";
-import { buildCursorPiToolDisplay, formatCursorToolTranscript, getCursorCreatePlanText, mergeCursorToolCalls } from "../src/cursor-tool-transcript.js";
+import {
+	CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
+	isExcludedFromCursorBridgeExposure,
+} from "../src/transcript/cursor-tool-names.js";
+import {
+	buildCursorPiToolDisplay,
+	formatCursorToolTranscript,
+	getCursorCreatePlanText,
+	mergeCursorToolCalls,
+} from "../src/transcript/cursor-tool-transcript.js";
 
 describe("formatCursorToolTranscript", () => {
 	it("defines shared bridge exclusions for neutral and legacy Cursor replay activity names", () => {
@@ -20,7 +28,11 @@ describe("formatCursorToolTranscript", () => {
 			args: { path: "README.md" },
 			result: {
 				status: "success",
-				value: { content: "# pi-cursor-sdk\n\nA pi provider extension", totalLines: 3, fileSize: 42 },
+				value: {
+					content: "# pi-cursor-sdk\n\nA pi provider extension",
+					totalLines: 3,
+					fileSize: 42,
+				},
 			},
 		});
 
@@ -63,7 +75,9 @@ describe("formatCursorToolTranscript", () => {
 			);
 
 			expect(transcript).toContain("read README.md");
-			expect(transcript).toContain("[local file preview at transcript time; Cursor read result content was unavailable]");
+			expect(transcript).toContain(
+				"[local file preview at transcript time; Cursor read result content was unavailable]",
+			);
 			expect(transcript).toContain("# Local title");
 			expect(transcript).toContain("Local body");
 		} finally {
@@ -169,7 +183,12 @@ describe("formatCursorToolTranscript", () => {
 			args: { command: "date" },
 			result: {
 				status: "success",
-				value: { stdout: "Sat May  9 10:48:38 MDT 2026\n", stderr: "", exitCode: 0, executionTime: 12 },
+				value: {
+					stdout: "Sat May  9 10:48:38 MDT 2026\n",
+					stderr: "",
+					exitCode: 0,
+					executionTime: 12,
+				},
 			},
 		});
 
@@ -205,18 +224,30 @@ describe("formatCursorToolTranscript", () => {
 		const editDisplay = buildCursorPiToolDisplay({
 			name: "edit",
 			args: { path: "src/index.ts", oldText: "old line\n", newText: "new line\n" },
-			result: { status: "success", value: { linesAdded: 1, linesRemoved: 1, diffString: "--- a/src/index.ts\n+++ b/src/index.ts" } },
+			result: {
+				status: "success",
+				value: {
+					linesAdded: 1,
+					linesRemoved: 1,
+					diffString: "--- a/src/index.ts\n+++ b/src/index.ts",
+				},
+			},
 		});
 		const writeDisplay = buildCursorPiToolDisplay({
 			name: "write",
 			args: { path: "new.txt", content: "hello\n" },
-			result: { status: "success", value: { linesCreated: 1, fileSize: 6, fileContentAfterWrite: "hello\n" } },
+			result: {
+				status: "success",
+				value: { linesCreated: 1, fileSize: 6, fileContentAfterWrite: "hello\n" },
+			},
 		});
 
 		expect(editDisplay).toMatchObject({
 			toolName: "edit",
 			args: { path: "src/index.ts", edits: [{ oldText: "old line\n", newText: "new line\n" }] },
-			result: { details: { cursorToolName: "edit", diff: "--- a/src/index.ts\n+++ b/src/index.ts" } },
+			result: {
+				details: { cursorToolName: "edit", diff: "--- a/src/index.ts\n+++ b/src/index.ts" },
+			},
 			isError: false,
 		});
 		expect(editDisplay.toolName).not.toContain("cursor");
@@ -238,13 +269,31 @@ describe("formatCursorToolTranscript", () => {
 		const editDisplay = buildCursorPiToolDisplay({
 			name: "edit",
 			args: { path: ".tool-demo-temp.txt" },
-			result: { status: "success", value: { linesAdded: 1, linesRemoved: 0, diffString: "--- a/.tool-demo-temp.txt\n+++ b/.tool-demo-temp.txt" } },
+			result: {
+				status: "success",
+				value: {
+					linesAdded: 1,
+					linesRemoved: 0,
+					diffString: "--- a/.tool-demo-temp.txt\n+++ b/.tool-demo-temp.txt",
+				},
+			},
 		});
 
 		expect(editDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { path: ".tool-demo-temp.txt", activityTitle: "Cursor edit", activitySummary: ".tool-demo-temp.txt" },
-			result: { details: { cursorToolName: "edit", title: "Cursor edit", summary: ".tool-demo-temp.txt", diff: "--- a/.tool-demo-temp.txt\n+++ b/.tool-demo-temp.txt" } },
+			args: {
+				path: ".tool-demo-temp.txt",
+				activityTitle: "Cursor edit",
+				activitySummary: ".tool-demo-temp.txt",
+			},
+			result: {
+				details: {
+					cursorToolName: "edit",
+					title: "Cursor edit",
+					summary: ".tool-demo-temp.txt",
+					diff: "--- a/.tool-demo-temp.txt\n+++ b/.tool-demo-temp.txt",
+				},
+			},
 			isError: false,
 		});
 		expect(editDisplay.args).not.toHaveProperty("edits");
@@ -255,35 +304,77 @@ describe("formatCursorToolTranscript", () => {
 		const strReplaceDisplay = buildCursorPiToolDisplay({
 			name: "StrReplace",
 			args: { path: "src/index.ts", old_string: "before", new_string: "after" },
-			result: { status: "success", value: { linesAdded: 2, linesRemoved: 1, diff: "--- a/src/index.ts\n+++ b/src/index.ts" } },
+			result: {
+				status: "success",
+				value: { linesAdded: 2, linesRemoved: 1, diff: "--- a/src/index.ts\n+++ b/src/index.ts" },
+			},
 		});
 		const notebookDisplay = buildCursorPiToolDisplay({
 			name: "EditNotebook",
 			args: { path: "notebooks/demo.ipynb", cellId: "cell-1" },
-			result: { status: "success", value: { linesAdded: 1, linesRemoved: 0, unifiedDiff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb" } },
+			result: {
+				status: "success",
+				value: {
+					linesAdded: 1,
+					linesRemoved: 0,
+					unifiedDiff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb",
+				},
+			},
 		});
 		const genericNotebookEditDisplay = buildCursorPiToolDisplay({
 			name: "edit",
 			args: { path: "notebooks/demo.ipynb", oldText: "before", newText: "after" },
-			result: { status: "success", value: { linesAdded: 1, linesRemoved: 1, unifiedDiff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb" } },
+			result: {
+				status: "success",
+				value: {
+					linesAdded: 1,
+					linesRemoved: 1,
+					unifiedDiff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb",
+				},
+			},
 		});
 
 		expect(strReplaceDisplay).toMatchObject({
 			toolName: "edit",
 			args: { path: "src/index.ts", edits: [{ oldText: "before", newText: "after" }] },
-			result: { details: { cursorToolName: "edit", diff: "--- a/src/index.ts\n+++ b/src/index.ts" } },
+			result: {
+				details: { cursorToolName: "edit", diff: "--- a/src/index.ts\n+++ b/src/index.ts" },
+			},
 			isError: false,
 		});
 		expect(notebookDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { path: "notebooks/demo.ipynb", cellId: "cell-1", activityTitle: "Cursor edit", activitySummary: "notebooks/demo.ipynb" },
-			result: { details: { cursorToolName: "edit", title: "Cursor edit", diff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb" } },
+			args: {
+				path: "notebooks/demo.ipynb",
+				cellId: "cell-1",
+				activityTitle: "Cursor edit",
+				activitySummary: "notebooks/demo.ipynb",
+			},
+			result: {
+				details: {
+					cursorToolName: "edit",
+					title: "Cursor edit",
+					diff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb",
+				},
+			},
 			isError: false,
 		});
 		expect(genericNotebookEditDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { path: "notebooks/demo.ipynb", oldText: "before", newText: "after", activityTitle: "Cursor edit", activitySummary: "notebooks/demo.ipynb" },
-			result: { details: { cursorToolName: "edit", title: "Cursor edit", diff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb" } },
+			args: {
+				path: "notebooks/demo.ipynb",
+				oldText: "before",
+				newText: "after",
+				activityTitle: "Cursor edit",
+				activitySummary: "notebooks/demo.ipynb",
+			},
+			result: {
+				details: {
+					cursorToolName: "edit",
+					title: "Cursor edit",
+					diff: "--- a/notebooks/demo.ipynb\n+++ b/notebooks/demo.ipynb",
+				},
+			},
 			isError: false,
 		});
 		expect(strReplaceDisplay.toolName).not.toBe(CURSOR_REPLAY_ACTIVITY_TOOL_NAME);
@@ -298,7 +389,10 @@ describe("formatCursorToolTranscript", () => {
 				args: { path: "/repo/src/index.ts" },
 				result: {
 					status: "success",
-					value: { fileDiagnostics: [{ path: "/repo/src/index.ts", diagnostics: [] }], totalDiagnostics: 0 },
+					value: {
+						fileDiagnostics: [{ path: "/repo/src/index.ts", diagnostics: [] }],
+						totalDiagnostics: 0,
+					},
 				},
 			},
 			{ cwd: "/repo" },
@@ -336,7 +430,11 @@ describe("formatCursorToolTranscript", () => {
 			args: { description: "Quick ls demo subagent" },
 			result: {
 				status: "success",
-				value: { result: { success: { command: "ls src | head -5", stdout: "context.ts\ncursor-provider.ts\n" } } },
+				value: {
+					result: {
+						success: { command: "ls src | head -5", stdout: "context.ts\ncursor-provider.ts\n" },
+					},
+				},
 			},
 		});
 		const mcpDisplay = buildCursorPiToolDisplay({
@@ -358,14 +456,29 @@ describe("formatCursorToolTranscript", () => {
 
 		expect(lintsDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { paths: ["src/index.ts"], diagnosticCount: 0, activityTitle: "Cursor diagnostics", activitySummary: "0 diagnostics in src/index.ts" },
-			result: { details: { cursorToolName: "readLints", title: "Cursor diagnostics", summary: "0 diagnostics in src/index.ts" } },
+			args: {
+				paths: ["src/index.ts"],
+				diagnosticCount: 0,
+				activityTitle: "Cursor diagnostics",
+				activitySummary: "0 diagnostics in src/index.ts",
+			},
+			result: {
+				details: {
+					cursorToolName: "readLints",
+					title: "Cursor diagnostics",
+					summary: "0 diagnostics in src/index.ts",
+				},
+			},
 			isError: false,
 		});
 		expect(lintsDisplay.result.content[0].text).toContain("No diagnostics in src/index.ts");
 		expect(todosDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { totalCount: 2, activityTitle: "Cursor todos", activitySummary: "1/2 completed, 1 pending" },
+			args: {
+				totalCount: 2,
+				activityTitle: "Cursor todos",
+				activitySummary: "1/2 completed, 1 pending",
+			},
 			result: {
 				details: {
 					cursorToolName: "updateTodos",
@@ -377,7 +490,11 @@ describe("formatCursorToolTranscript", () => {
 		});
 		expect(planDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { totalCount: 2, activityTitle: "Cursor plan", activitySummary: "1/2 completed, 1 pending" },
+			args: {
+				totalCount: 2,
+				activityTitle: "Cursor plan",
+				activitySummary: "1/2 completed, 1 pending",
+			},
 			result: {
 				details: {
 					cursorToolName: "createPlan",
@@ -390,8 +507,18 @@ describe("formatCursorToolTranscript", () => {
 		expect(todosDisplay.result.content[0].text).toContain("✓ Run Read/Grep/Glob (completed)");
 		expect(taskDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { description: "Quick ls demo subagent", activityTitle: "Cursor task", activitySummary: "Quick ls demo subagent: $ ls src | head -5" },
-			result: { details: { cursorToolName: "task", title: "Cursor task", summary: "Quick ls demo subagent: $ ls src | head -5" } },
+			args: {
+				description: "Quick ls demo subagent",
+				activityTitle: "Cursor task",
+				activitySummary: "Quick ls demo subagent: $ ls src | head -5",
+			},
+			result: {
+				details: {
+					cursorToolName: "task",
+					title: "Cursor task",
+					summary: "Quick ls demo subagent: $ ls src | head -5",
+				},
+			},
 			isError: false,
 		});
 		expect(taskDisplay.result.content[0].text).toContain("context.ts");
@@ -405,8 +532,14 @@ describe("formatCursorToolTranscript", () => {
 		expect(mcpDisplay.result.content[0].text).not.toContain('"content"');
 		expect(deleteDisplay).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { path: ".debug/delete-me.txt", activityTitle: "Cursor delete", activitySummary: ".debug/delete-me.txt" },
-			result: { details: { cursorToolName: "delete", title: "Cursor delete", path: ".debug/delete-me.txt" } },
+			args: {
+				path: ".debug/delete-me.txt",
+				activityTitle: "Cursor delete",
+				activitySummary: ".debug/delete-me.txt",
+			},
+			result: {
+				details: { cursorToolName: "delete", title: "Cursor delete", path: ".debug/delete-me.txt" },
+			},
 			isError: false,
 		});
 		expect(deleteDisplay.result.content[0].text).toContain("Deleted 9 bytes");
@@ -455,7 +588,10 @@ describe("formatCursorToolTranscript", () => {
 				args: { description: "Small badge", filePath: "assets/badge.png" },
 				result: {
 					status: "success",
-					value: { filePath: "/Users/example/.cursor/projects/repo/assets/badge.png", imageData: "base64-image-data" },
+					value: {
+						filePath: "/Users/example/.cursor/projects/repo/assets/badge.png",
+						imageData: "base64-image-data",
+					},
 				},
 			},
 			{ cwd: "/repo" },
@@ -463,7 +599,11 @@ describe("formatCursorToolTranscript", () => {
 
 		expect(display).toMatchObject({
 			toolName: CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
-			args: { prompt: "Small badge", activityTitle: "Cursor image generation", activitySummary: "/Users/example/.cursor/projects/repo/assets/badge.png" },
+			args: {
+				prompt: "Small badge",
+				activityTitle: "Cursor image generation",
+				activitySummary: "/Users/example/.cursor/projects/repo/assets/badge.png",
+			},
 			result: {
 				details: {
 					cursorToolName: "generateImage",
@@ -476,7 +616,9 @@ describe("formatCursorToolTranscript", () => {
 			},
 			isError: false,
 		});
-		expect(display.result.content[0].text).toContain("Saved image: /Users/example/.cursor/projects/repo/assets/badge.png");
+		expect(display.result.content[0].text).toContain(
+			"Saved image: /Users/example/.cursor/projects/repo/assets/badge.png",
+		);
 		expect(display.result.content[0].text).not.toContain("base64-image-data");
 	});
 
@@ -487,7 +629,11 @@ describe("formatCursorToolTranscript", () => {
 				args: { path: "/repo/src/index.ts" },
 				result: {
 					status: "success",
-					value: { linesAdded: 1, linesRemoved: 1, diffString: "--- a//repo/src/index.ts\n+++ b//repo/src/index.ts" },
+					value: {
+						linesAdded: 1,
+						linesRemoved: 1,
+						diffString: "--- a//repo/src/index.ts\n+++ b//repo/src/index.ts",
+					},
 				},
 			},
 			{ cwd: "/repo" },
@@ -498,7 +644,11 @@ describe("formatCursorToolTranscript", () => {
 				args: { path: "/repo/src/index.ts", oldText: "old", newText: "new" },
 				result: {
 					status: "success",
-					value: { linesAdded: 1, linesRemoved: 1, diffString: "--- a//repo/src/index.ts\n+++ b//repo/src/index.ts" },
+					value: {
+						linesAdded: 1,
+						linesRemoved: 1,
+						diffString: "--- a//repo/src/index.ts\n+++ b//repo/src/index.ts",
+					},
 				},
 			},
 			{ cwd: "/repo" },
@@ -515,14 +665,28 @@ describe("formatCursorToolTranscript", () => {
 			{
 				name: "write",
 				args: { path: "/repo/new.txt", content: "hello\n" },
-				result: { status: "success", value: { linesCreated: 1, fileSize: 6, fileContentAfterWrite: "hello\n" } },
+				result: {
+					status: "success",
+					value: { linesCreated: 1, fileSize: 6, fileContentAfterWrite: "hello\n" },
+				},
 			},
 			{ cwd: "/repo" },
 		);
 
-		expect(editDisplay.args).toEqual({ path: "src/index.ts", activityTitle: "Cursor edit", activitySummary: "src/index.ts" });
-		expect(nativeEditDisplay.args).toEqual({ path: "src/index.ts", edits: [{ oldText: "old", newText: "new" }] });
-		expect(pathOnlyWriteDisplay.args).toEqual({ path: "new.txt", activityTitle: "Cursor write", activitySummary: "new.txt" });
+		expect(editDisplay.args).toEqual({
+			path: "src/index.ts",
+			activityTitle: "Cursor edit",
+			activitySummary: "src/index.ts",
+		});
+		expect(nativeEditDisplay.args).toEqual({
+			path: "src/index.ts",
+			edits: [{ oldText: "old", newText: "new" }],
+		});
+		expect(pathOnlyWriteDisplay.args).toEqual({
+			path: "new.txt",
+			activityTitle: "Cursor write",
+			activitySummary: "new.txt",
+		});
 		expect(contentWriteDisplay.args).toEqual({ path: "new.txt", content: "hello\n" });
 		expect(editDisplay.toolName).toBe(CURSOR_REPLAY_ACTIVITY_TOOL_NAME);
 		expect(nativeEditDisplay.toolName).toBe("edit");
@@ -530,10 +694,18 @@ describe("formatCursorToolTranscript", () => {
 		expect(contentWriteDisplay.toolName).toBe("write");
 		expect(editDisplay.result.content[0].text).toContain("edit src/index.ts");
 		expect(pathOnlyWriteDisplay.result.content[0].text).toContain("write new.txt");
-		expect(pathOnlyWriteDisplay.result.details).toMatchObject({ cursorToolName: "write", title: "Cursor write", path: "new.txt" });
+		expect(pathOnlyWriteDisplay.result.details).toMatchObject({
+			cursorToolName: "write",
+			title: "Cursor write",
+			path: "new.txt",
+		});
 		expect(editDisplay.result.content[0].text).toContain("--- a/src/index.ts\n+++ b/src/index.ts");
 		expect(editDisplay.result.content[0].text).not.toContain("/repo");
-		expect(editDisplay.result.details).toMatchObject({ path: "src/index.ts", diffString: "--- a/src/index.ts\n+++ b/src/index.ts", diff: "--- a/src/index.ts\n+++ b/src/index.ts" });
+		expect(editDisplay.result.details).toMatchObject({
+			path: "src/index.ts",
+			diffString: "--- a/src/index.ts\n+++ b/src/index.ts",
+			diff: "--- a/src/index.ts\n+++ b/src/index.ts",
+		});
 	});
 
 	it("builds native pi display data for Cursor read and shell calls", () => {
@@ -581,7 +753,10 @@ describe("formatCursorToolTranscript", () => {
 		const shellDisplay = buildCursorPiToolDisplay({
 			name: "shell",
 			args: { command: "sleep 2", timeout: 1000 },
-			result: { status: "success", value: { stdout: "", stderr: "", exitCode: 0, executionTime: 1113 } },
+			result: {
+				status: "success",
+				value: { stdout: "", stderr: "", exitCode: 0, executionTime: 1113 },
+			},
 		});
 
 		expect(shellDisplay).toMatchObject({
@@ -629,7 +804,7 @@ describe("formatCursorToolTranscript", () => {
 		const globDisplay = buildCursorPiToolDisplay({
 			type: "glob",
 			args: { globPattern: "**/*.ts", targetDirectory: "src" },
-			result: { status: "success", value: { files: ["src/index.ts", "src/context.ts"] } },
+			result: { status: "success", value: { files: ["src/index.ts", "src/context/context.ts"] } },
 		});
 		const emptyGrepDisplay = buildCursorPiToolDisplay({
 			type: "grep",
@@ -674,7 +849,10 @@ describe("formatCursorToolTranscript", () => {
 		const emptyCursorGlobDisplay = buildCursorPiToolDisplay({
 			type: "glob",
 			args: { globPattern: "**/*.missing", targetDirectory: "src" },
-			result: { status: "success", value: { files: [], totalFiles: 0, clientTruncated: false, ripgrepTruncated: false } },
+			result: {
+				status: "success",
+				value: { files: [], totalFiles: 0, clientTruncated: false, ripgrepTruncated: false },
+			},
 		});
 
 		expect(grepDisplay).toMatchObject({
@@ -686,7 +864,7 @@ describe("formatCursorToolTranscript", () => {
 		expect(globDisplay).toMatchObject({
 			toolName: "find",
 			args: { pattern: "**/*.ts", path: "src" },
-			result: { content: [{ type: "text", text: "src/index.ts\nsrc/context.ts" }] },
+			result: { content: [{ type: "text", text: "src/index.ts\nsrc/context/context.ts" }] },
 			isError: false,
 		});
 		expect(emptyGrepDisplay.result.content[0].text).toBe("(no matches)");
@@ -732,7 +910,10 @@ describe("formatCursorToolTranscript", () => {
 		const transcript = formatCursorToolTranscript({
 			name: "run_terminal_cmd",
 			args: { command: "pwd" },
-			result: { status: "success", value: { stdout: "/tmp\n", stderr: "", exitCode: 0, executionTime: 1 } },
+			result: {
+				status: "success",
+				value: { stdout: "/tmp\n", stderr: "", exitCode: 0, executionTime: 1 },
+			},
 		});
 
 		expect(transcript).toContain("$ pwd");
@@ -744,7 +925,10 @@ describe("formatCursorToolTranscript", () => {
 			{
 				name: "read",
 				args: { path: "big.txt" },
-				result: { status: "success", value: { content: Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n") } },
+				result: {
+					status: "success",
+					value: { content: Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n") },
+				},
 			},
 			{ maxLines: 3, maxChars: 1000 },
 		);

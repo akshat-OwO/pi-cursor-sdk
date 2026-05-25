@@ -9,7 +9,7 @@ import {
 	setCursorTaskWidgetUiBound,
 	shouldSuppressCursorTaskThinkingProgress,
 	startCursorTask,
-} from "../src/cursor-task-ui.js";
+} from "../src/task/cursor-task-ui.js";
 
 describe("cursor-task-ui", () => {
 	beforeEach(() => {
@@ -24,7 +24,11 @@ describe("cursor-task-ui", () => {
 	it("tracks running and completed Cursor tasks by call ID", () => {
 		startCursorTask("task-1", "Explore repo layout");
 		expect(listCursorTasks()).toEqual([
-			expect.objectContaining({ callId: "task-1", description: "Explore repo layout", status: "running" }),
+			expect.objectContaining({
+				callId: "task-1",
+				description: "Explore repo layout",
+				status: "running",
+			}),
 		]);
 
 		completeCursorTask("task-1", "completed", "done");

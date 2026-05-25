@@ -127,15 +127,15 @@ The script calls `Cursor.models.list({ apiKey })`, writes `src/cursor-fallback-m
 
 Use native pi abstractions wherever possible:
 
-| Concern | Representation |
-|---|---|
-| Cursor base model | pi provider model |
-| Cursor `context` | pi-visible model variant because it changes `contextWindow` |
-| Cursor `reasoning` | pi native thinking via `thinkingLevelMap` |
-| Cursor `effort` | pi native thinking via `thinkingLevelMap` |
-| Cursor `thinking=false` | pi native `off` |
-| Cursor `fast` | pi-visible model variant with a `-fast` suffix |
-| Footer | default pi footer only |
+| Concern                 | Representation                                              |
+| ----------------------- | ----------------------------------------------------------- |
+| Cursor base model       | pi provider model                                           |
+| Cursor `context`        | pi-visible model variant because it changes `contextWindow` |
+| Cursor `reasoning`      | pi native thinking via `thinkingLevelMap`                   |
+| Cursor `effort`         | pi native thinking via `thinkingLevelMap`                   |
+| Cursor `thinking=false` | pi native `off`                                             |
+| Cursor `fast`           | pi-visible model variant with a `-fast` suffix              |
+| Footer                  | default pi footer only                                      |
 
 Reason:
 
@@ -211,27 +211,27 @@ No per-model hardcoded control list.
 
 Infer behavior from discovered params:
 
-| Cursor param | Extension behavior |
-|---|---|
-| `context` with values | register pi-visible context variants |
-| `reasoning` | populate `thinkingLevelMap` |
-| `effort` | populate `thinkingLevelMap` |
+| Cursor param                 | Extension behavior                                                                           |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| `context` with values        | register pi-visible context variants                                                         |
+| `reasoning`                  | populate `thinkingLevelMap`                                                                  |
+| `effort`                     | populate `thinkingLevelMap`                                                                  |
 | `thinking` with `true/false` | map `false` to pi `off`; map `true` to the enabled pi level chosen for boolean-only thinking |
-| `fast` with `true/false` | register a separate `-fast` pi model variant |
+| `fast` with `true/false`     | register a separate `-fast` pi model variant                                                 |
 
 ## Keybindings And Commands
 
 Native pi keybindings:
 
-| Action | Keybinding | Owner |
-|---|---:|---|
-| Cycle thinking / reasoning / effort | `shift+tab` | pi native `app.thinking.cycle` |
-| Select model / context variant | `/model`, `ctrl+l`, scoped model cycling | pi native model selection |
+| Action                              |                               Keybinding | Owner                          |
+| ----------------------------------- | ---------------------------------------: | ------------------------------ |
+| Cycle thinking / reasoning / effort |                              `shift+tab` | pi native `app.thinking.cycle` |
+| Select model / context variant      | `/model`, `ctrl+l`, scoped model cycling | pi native model selection      |
 
 Cursor extension controls:
 
-| Action | Preferred control | Applies when |
-|---|---:|---|
+| Action              |                              Preferred control | Applies when     |
+| ------------------- | ---------------------------------------------: | ---------------- |
 | Select fast variant | `/model`, `ctrl+l`, `--model cursor/<id>-fast` | model has `fast` |
 
 Do not register a shortcut for `shift+tab`. Pi reserves the native thinking keybinding, and the extension should only influence it through model metadata.
@@ -258,14 +258,14 @@ Cursor values vary by model. Build `thinkingLevelMap` from the values Cursor exp
 
 Mapping rules:
 
-| pi level | Cursor value preference |
-|---|---|
-| `off` | `none`, else `off`, else `false`, else unsupported |
-| `minimal` | `minimal`, else unsupported |
-| `low` | `low` |
-| `medium` | `medium` |
-| `high` | `high`, else `true` for boolean-only thinking |
-| `xhigh` | `xhigh`, else `max`, else `extra-high` |
+| pi level  | Cursor value preference                            |
+| --------- | -------------------------------------------------- |
+| `off`     | `none`, else `off`, else `false`, else unsupported |
+| `minimal` | `minimal`, else unsupported                        |
+| `low`     | `low`                                              |
+| `medium`  | `medium`                                           |
+| `high`    | `high`, else `true` for boolean-only thinking      |
+| `xhigh`   | `xhigh`, else `max`, else `extra-high`             |
 
 Important details:
 
@@ -461,16 +461,16 @@ pi --model cursor/gpt-5.5@1m-fast -p "Say ok only"
 
 These examples document the capability shapes the extension handles, not an exhaustive live catalog. The exact Cursor catalog changes over time; use `pi -e . --list-models cursor` or `Cursor.models.list()` for the current model surface. When the SDK reports aliases, only unambiguous aliases are registered; shared generic aliases are skipped.
 
-| Example model shape | Cursor controls | Pi representation |
-|---|---|---|
-| plain model, such as `default` or models with no exposed controls | none | plain model |
-| Composer-style model such as `composer-2.5` or `composer-2` | fast | base model + `-fast` variant |
-| GPT-style reasoning model with context variants | context, reasoning, fast when exposed | context variants + native thinking + optional `-fast` variants |
-| Claude-style thinking model with context variants | thinking, context, effort when exposed | context variants + native thinking + optional `-fast` variants |
-| Claude-style thinking model without context variants | thinking and/or effort | plain model + native thinking |
-| context-only model | context | context variants |
-| unique latest alias for any shape | aliases | same pi rows as the base model shape, using the alias as `ModelSelection.id` |
-| shared generic alias across multiple base models | aliases | skipped to avoid misleading pi rows |
+| Example model shape                                               | Cursor controls                        | Pi representation                                                            |
+| ----------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| plain model, such as `default` or models with no exposed controls | none                                   | plain model                                                                  |
+| Composer-style model such as `composer-2.5` or `composer-2`       | fast                                   | base model + `-fast` variant                                                 |
+| GPT-style reasoning model with context variants                   | context, reasoning, fast when exposed  | context variants + native thinking + optional `-fast` variants               |
+| Claude-style thinking model with context variants                 | thinking, context, effort when exposed | context variants + native thinking + optional `-fast` variants               |
+| Claude-style thinking model without context variants              | thinking and/or effort                 | plain model + native thinking                                                |
+| context-only model                                                | context                                | context variants                                                             |
+| unique latest alias for any shape                                 | aliases                                | same pi rows as the base model shape, using the alias as `ModelSelection.id` |
+| shared generic alias across multiple base models                  | aliases                                | skipped to avoid misleading pi rows                                          |
 
 If Cursor later adds `fast`, `context`, `reasoning`, `effort`, or aliases to a model, the extension picks up unambiguous capability changes dynamically.
 
