@@ -49,6 +49,7 @@ Use four seams:
 **Goal:** Prevent prompt and MCP tool-description wording from diverging.
 
 **Done when:**
+
 - A small shared helper/source defines the core bridge contract text used by both prompt boundary and MCP descriptions.
 - The contract covers:
   - `pi__*` names are live Cursor MCP bridge names only when exposed in the current run;
@@ -59,6 +60,7 @@ Use four seams:
 - The helper does not enumerate per-run tools and does not create a capability manifest.
 
 **Key files:**
+
 - `src/context.ts:166-179`
 - `src/cursor-pi-tool-bridge.ts:209-216`
 - likely new shared helper near `src/cursor-tool-names.ts`
@@ -72,6 +74,7 @@ Use four seams:
 **Goal:** Make the live bridge contract visible where the Cursor agent reasons about tools.
 
 **Done when:**
+
 - `buildCursorPrompt()` uses the shared contract text and still emits one static boundary section before pi system instructions.
 - `snapshotToolToMcpTool()` enriches MCP `Tool.description` with the shared bridge contract plus the original pi tool description.
 - `CursorPiBridgeToolDefinition.description` can remain the original pi description; only MCP-facing descriptions need enrichment.
@@ -83,6 +86,7 @@ Use four seams:
   - snapshot/mapping tests still preserve original pi descriptions and mappings.
 
 **Key files:**
+
 - `src/context.ts:166-179`
 - `src/cursor-pi-tool-bridge.ts:175-216`
 - `src/cursor-pi-tool-bridge.ts:373-392`
@@ -98,6 +102,7 @@ Use four seams:
 **Goal:** Make bridge state debuggable in smoke tests without adding a default manifest or TUI/footer noise.
 
 **Done when:**
+
 - `PI_CURSOR_PI_TOOL_BRIDGE_DEBUG=1` enables diagnostics; unset/false leaves output unchanged.
 - The sink is canonical: single-line JSONL records written to `process.stderr` with a stable prefix such as `[pi-cursor-sdk:bridge]`.
 - Records cover:
@@ -110,6 +115,7 @@ Use four seams:
 - Tests spy on `process.stderr.write` or the logger helper to prove output is off by default, opt-in when enabled, and scrubbed.
 
 **Key files:**
+
 - `src/cursor-pi-tool-bridge.ts:279-358`
 - `src/cursor-pi-tool-bridge.ts:394-455`
 - `src/cursor-provider.ts:827-897`
@@ -125,6 +131,7 @@ Use four seams:
 **Goal:** Make valid smoke-test feedback discoverable from repo docs without adding generic desktop automation guidance.
 
 **Done when:**
+
 - `README.md` “Tools and local pi bridge” becomes a compact “Cursor provider tool contract” that states:
   - Cursor local-agent tools/settings/plugins/configured MCP are separate from bridged pi tools;
   - active bridgeable pi tools appear as `pi__*` MCP tools only when exposed in the current run;
@@ -148,6 +155,7 @@ Use four seams:
 - Docs include the same-run resume invariant explicitly: a bridged call resolves a matching pi `toolResult` into the same live Cursor SDK run, without creating a new `Agent`, unless the run was disposed/aborted/cancelled.
 
 **Key files:**
+
 - `README.md:201-239`
 - `README.md:293-319`
 - `docs/cursor-native-tool-replay.md:1-85`
@@ -163,6 +171,7 @@ Use four seams:
 **Goal:** Confirm clarity changes do not alter the provider contract.
 
 **Done when:**
+
 - Focused tests prove or preserve:
   - `Agent.create()` receives `mcpServers.pi_tools` only when the bridge is enabled and the active snapshot is non-empty;
   - bridge requests emit real pi tool names;
@@ -181,6 +190,7 @@ Use four seams:
 - No visual audit is required unless implementation changes rendered replay/bridge cards.
 
 **Key files:**
+
 - `test/context.test.ts`
 - `test/cursor-pi-tool-bridge.test.ts`
 - `test/cursor-provider.test.ts`

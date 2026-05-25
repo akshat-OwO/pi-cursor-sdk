@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatInactiveCursorReplayTrace } from "../src/cursor-native-replay-trace.js";
+import { formatInactiveCursorReplayTrace } from "../src/replay/cursor-native-replay-trace.js";
 
 describe("cursor-native-replay-trace", () => {
 	it("formats inactive replay as title: summary", () => {

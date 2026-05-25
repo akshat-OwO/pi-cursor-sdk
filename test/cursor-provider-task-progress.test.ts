@@ -12,7 +12,7 @@ import {
 	type CursorDeltaHandler,
 	type RegisteredTool,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor } from "../src/cursor-provider.js";
+import { streamCursor } from "../src/provider/cursor-provider.js";
 
 describe("streamCursor Cursor task progress", () => {
 	beforeEach(resetCursorProviderTestState);
@@ -29,42 +29,52 @@ describe("streamCursor Cursor task progress", () => {
 					resolveRun = resolve;
 				}),
 		);
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({
-				update: {
-					type: "tool-call-started",
-					toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
-					callId: "task-1",
-				},
-			});
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "task",
-						args: { description: "Explore AI/automation projects" },
-						result: { status: "success", value: { description: "Explore AI/automation projects", result: { success: { stdout: "done" } } } },
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
+						callId: "task-1",
 					},
-					callId: "task-1",
-				},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "task",
+							args: { description: "Explore AI/automation projects" },
+							result: {
+								status: "success",
+								value: {
+									description: "Explore AI/automation projects",
+									result: { success: { stdout: "done" } },
+								},
+							},
+						},
+						callId: "task-1",
+					},
+				});
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "running",
+					wait: runWait,
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "running",
-				wait: runWait,
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			agentId: "agent-1",
 			send: mockSend,
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const firstEvents = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const trace = collectThinkingDeltas(firstEvents);
 		const firstDone = getDoneEvent(firstEvents);
 		const toolCall = firstDone.message.content.find(isToolCallBlock);
@@ -76,7 +86,13 @@ describe("streamCursor Cursor task progress", () => {
 
 		resolveRun({ id: "run-1", status: "finished", result: "Final answer." });
 		const cursorTool = registeredTools.find((tool) => tool.name === "cursor");
-		const toolResult = await cursorTool!.execute(toolCall!.id, toolCall!.arguments, undefined, undefined, {});
+		const toolResult = await cursorTool!.execute(
+			toolCall!.id,
+			toolCall!.arguments,
+			undefined,
+			undefined,
+			{},
+		);
 
 		const replayContext = makeContext();
 		replayContext.messages = [
@@ -97,40 +113,59 @@ describe("streamCursor Cursor task progress", () => {
 
 	it("does not emit task progress for normal read or bash starts", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "0";
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "README.md" } }, callId: "read-1" } });
-			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "bash", args: { command: "git status" } }, callId: "bash-1" } });
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: { name: "read", result: { status: "success", value: { content: "readme" } } },
-					callId: "read-1",
-				},
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "read", args: { path: "README.md" } },
+						callId: "read-1",
+					},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "bash", args: { command: "git status" } },
+						callId: "bash-1",
+					},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: { name: "read", result: { status: "success", value: { content: "readme" } } },
+						callId: "read-1",
+					},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "bash",
+							result: { status: "success", value: { stdout: "clean", stderr: "", exitCode: 0 } },
+						},
+						callId: "bash-1",
+					},
+				});
+				opts.onDelta({ update: { type: "text-delta", text: "done" } });
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "finished",
+					wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: { name: "bash", result: { status: "success", value: { stdout: "clean", stderr: "", exitCode: 0 } } },
-					callId: "bash-1",
-				},
-			});
-			opts.onDelta({ update: { type: "text-delta", text: "done" } });
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "finished",
-				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			send: mockSend,
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const events = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const events = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const trace = collectThinkingDeltas(events);
 
 		expect(trace).not.toContain("Cursor task:");
@@ -141,58 +176,65 @@ describe("streamCursor Cursor task progress", () => {
 
 	it("deduplicates repeated partial and started updates for the same task call ID", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "0";
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({
-				update: {
-					type: "partial-tool-call",
-					toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
-					callId: "task-1",
-					modelCallId: "model-1",
-				},
-			});
-			opts.onDelta({
-				update: {
-					type: "tool-call-started",
-					toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
-					callId: "task-1",
-				},
-			});
-			opts.onDelta({
-				update: {
-					type: "partial-tool-call",
-					toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
-					callId: "task-1",
-					modelCallId: "model-1",
-				},
-			});
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "task",
-						args: { description: "Explore AI/automation projects" },
-						result: { status: "success", value: { description: "Explore AI/automation projects" } },
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "partial-tool-call",
+						toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
+						callId: "task-1",
+						modelCallId: "model-1",
 					},
-					callId: "task-1",
-				},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
+						callId: "task-1",
+					},
+				});
+				opts.onDelta({
+					update: {
+						type: "partial-tool-call",
+						toolCall: { name: "task", args: { description: "Explore AI/automation projects" } },
+						callId: "task-1",
+						modelCallId: "model-1",
+					},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "task",
+							args: { description: "Explore AI/automation projects" },
+							result: {
+								status: "success",
+								value: { description: "Explore AI/automation projects" },
+							},
+						},
+						callId: "task-1",
+					},
+				});
+				opts.onDelta({ update: { type: "text-delta", text: "done" } });
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "finished",
+					wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			opts.onDelta({ update: { type: "text-delta", text: "done" } });
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "finished",
-				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			send: mockSend,
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const events = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const events = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const trace = collectThinkingDeltas(events);
 		const progressMatches = trace.match(/Cursor task: Explore AI\/automation projects/g) ?? [];
 
@@ -203,42 +245,46 @@ describe("streamCursor Cursor task progress", () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "0";
 		const secretKey = "cursor-task-secret-key-123";
 		const longDescription = `Bearer ${secretKey} ${"x".repeat(300)}`;
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({
-				update: {
-					type: "tool-call-started",
-					toolCall: { name: "task", args: { description: longDescription } },
-					callId: "task-1",
-				},
-			});
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "task",
-						args: { description: longDescription },
-						result: { status: "success", value: { description: longDescription } },
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "task", args: { description: longDescription } },
+						callId: "task-1",
 					},
-					callId: "task-1",
-				},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "task",
+							args: { description: longDescription },
+							result: { status: "success", value: { description: longDescription } },
+						},
+						callId: "task-1",
+					},
+				});
+				opts.onDelta({ update: { type: "text-delta", text: "done" } });
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "finished",
+					wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			opts.onDelta({ update: { type: "text-delta", text: "done" } });
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "finished",
-				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			send: mockSend,
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const events = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: secretKey }));
+		const events = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: secretKey }),
+		);
 		const trace = collectThinkingDeltas(events);
 		const progressLine = trace.split("\n").find((line) => line.includes("Cursor task:")) ?? "";
 
@@ -251,45 +297,55 @@ describe("streamCursor Cursor task progress", () => {
 
 	it("does not emit Cursor task progress for MCP envelope starts", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "0";
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({
-				update: {
-					type: "tool-call-started",
-					toolCall: {
-						name: "mcp",
-						args: { toolName: "external_search", description: "Should not surface as Cursor task progress" },
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: {
+							name: "mcp",
+							args: {
+								toolName: "external_search",
+								description: "Should not surface as Cursor task progress",
+							},
+						},
+						callId: "mcp-1",
 					},
-					callId: "mcp-1",
-				},
-			});
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "mcp",
-						args: { toolName: "external_search", description: "Should not surface as Cursor task progress" },
-						result: { status: "success", value: { content: "ok" } },
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "mcp",
+							args: {
+								toolName: "external_search",
+								description: "Should not surface as Cursor task progress",
+							},
+							result: { status: "success", value: { content: "ok" } },
+						},
+						callId: "mcp-1",
 					},
-					callId: "mcp-1",
-				},
+				});
+				opts.onDelta({ update: { type: "text-delta", text: "done" } });
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "finished",
+					wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			opts.onDelta({ update: { type: "text-delta", text: "done" } });
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "finished",
-				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished" }),
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			send: mockSend,
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const events = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const events = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const trace = collectThinkingDeltas(events);
 
 		expect(trace).not.toContain("Cursor task:");

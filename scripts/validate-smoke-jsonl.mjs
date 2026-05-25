@@ -117,7 +117,10 @@ function isReplayErrorMessage(message, needle) {
 	const text = getMessageText(message);
 	if (!text.includes(needle)) return false;
 	if (message.role === "toolResult" && message.isError === true) return true;
-	if (message.role === "assistant" && (message.stopReason === "error" || typeof message.errorMessage === "string")) {
+	if (
+		message.role === "assistant" &&
+		(message.stopReason === "error" || typeof message.errorMessage === "string")
+	) {
 		return true;
 	}
 	return false;
@@ -192,7 +195,9 @@ function main() {
 		let summary;
 		try {
 			const { lineCount, records, parseErrorCount } = parseJsonlFile(file);
-			const messages = records.filter((record) => record.type === "message").map((record) => record.message);
+			const messages = records
+				.filter((record) => record.type === "message")
+				.map((record) => record.message);
 			const assistants = messages.filter((message) => message?.role === "assistant");
 			const usage = assistants.map((message) => message.usage).filter(Boolean);
 			const badUsage = assistants.map((message) => message.usage).filter(isBadUsage);

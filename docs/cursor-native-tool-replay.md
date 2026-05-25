@@ -2,11 +2,11 @@
 
 Two pi-facing paths plus Cursor's own local-agent surface:
 
-| Surface | Callable? | Pi shows | Behavior |
-| --- | --- | --- | --- |
-| **Pi MCP bridge** | Cursor calls `pi__*` MCP names | Real pi tool names | Normal pi tool execution |
-| **Native replay** | No — display only | Native-looking cards | Recorded Cursor SDK results |
-| **Cursor-native** | Cursor SDK tools/settings/MCP | Replay cards or transcripts when reported | Owned by Cursor SDK |
+| Surface           | Callable?                      | Pi shows                                  | Behavior                    |
+| ----------------- | ------------------------------ | ----------------------------------------- | --------------------------- |
+| **Pi MCP bridge** | Cursor calls `pi__*` MCP names | Real pi tool names                        | Normal pi tool execution    |
+| **Native replay** | No — display only              | Native-looking cards                      | Recorded Cursor SDK results |
+| **Cursor-native** | Cursor SDK tools/settings/MCP  | Replay cards or transcripts when reported | Owned by Cursor SDK         |
 
 Bridge MCP names are not pi tool names. Cursor must call `pi__sem_reindex`; pi history shows `sem_reindex`.
 

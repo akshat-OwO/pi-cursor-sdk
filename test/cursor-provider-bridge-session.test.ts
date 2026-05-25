@@ -29,22 +29,23 @@ import {
 	type CursorStepHandler,
 	type RegisteredTool,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
-import { estimateCursorPromptMessageTokens } from "../src/context.js";
-import { __testUtils as sessionAgentTestUtils } from "../src/cursor-session-agent.js";
-import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/cursor-pi-tool-bridge.js";
-import { __testUtils as nativeToolDisplayTestUtils } from "../src/cursor-native-tool-display.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
+import { estimateCursorPromptMessageTokens } from "../src/context/context.js";
+import { __testUtils as sessionAgentTestUtils } from "../src/session/cursor-session-agent.js";
+import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/bridge/cursor-pi-tool-bridge.js";
+import { __testUtils as nativeToolDisplayTestUtils } from "../src/replay/cursor-native-tool-display.js";
 import type { Context } from "@earendil-works/pi-ai";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-
-
 describe("streamCursor session agent", () => {
 	beforeEach(resetCursorProviderTestState);
 
-it("keeps the session agent alive after a successful text-only turn", async () => {
+	it("keeps the session agent alive after a successful text-only turn", async () => {
 		const mockDispose = vi.fn().mockResolvedValue(undefined);
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
@@ -104,10 +105,14 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 			[Symbol.asyncDispose]: mockDispose,
 		}));
 
-		const errorEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const errorEvents = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		expect(getErrorEvent(errorEvents).reason).toBe("error");
 
-		const recoveryEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const recoveryEvents = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		expect(getDoneEvent(recoveryEvents).reason).toBe("stop");
 		expect(mockedCreate).toHaveBeenCalledTimes(2);
 		expect(mockSend).toHaveBeenCalledTimes(2);
@@ -120,7 +125,9 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 				id: "run-1",
 				agentId: "agent-1",
 				status: "finished",
-				wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: message.text ?? "" }),
+				wait: vi
+					.fn()
+					.mockResolvedValue({ id: "run-1", status: "finished", result: message.text ?? "" }),
 				cancel: vi.fn(),
 				supports: () => true,
 				unsupportedReason: () => undefined,
@@ -138,7 +145,23 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 		const followUpContext = makeContext();
 		followUpContext.messages = [
 			...firstContext.messages,
-			{ role: "assistant", content: [{ type: "text", text: "Hi there." }], api: "cursor-sdk", provider: "cursor", model: "test-model", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 },
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "Hi there." }],
+				api: "cursor-sdk",
+				provider: "cursor",
+				model: "test-model",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: 2,
+			},
 			{ role: "user", content: "Follow up", timestamp: 3 },
 		];
 		await collectEvents(streamCursor(makeModel(), followUpContext, { apiKey: "test-key" }));
@@ -183,7 +206,9 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 			id: "run-1",
 			agentId: "agent-1",
 			status: "finished",
-			wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: message.text ?? "" }),
+			wait: vi
+				.fn()
+				.mockResolvedValue({ id: "run-1", status: "finished", result: message.text ?? "" }),
 			cancel: vi.fn(),
 			supports: () => true,
 			unsupportedReason: () => undefined,
@@ -272,7 +297,14 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 				api: "cursor-sdk",
 				provider: "cursor",
 				model: "test-model",
-				usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
 				stopReason: "stop",
 				timestamp: 2,
 			},
@@ -321,39 +353,47 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 		});
 
 		let turn2OnDelta: CursorDeltaHandler | undefined;
-		let resolveTurn2Run: (result: { id: string; status: "finished"; result: string }) => void = () => {};
+		let resolveTurn2Run: (result: {
+			id: string;
+			status: "finished";
+			result: string;
+		}) => void = () => {};
 		let sendCallCount = 0;
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler; onStep: CursorStepHandler }) => {
-			sendCallCount += 1;
-			if (sendCallCount === 1) {
-				opts.onDelta({ update: { type: "text-delta", text: "Hello" } });
-				return {
-					id: "run-1",
-					agentId: "agent-1",
-					status: "finished",
-					wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: "Hello" }),
-					cancel: vi.fn(),
-					supports: () => true,
-					unsupportedReason: () => undefined,
-				};
-			}
+		const mockSend = vi
+			.fn()
+			.mockImplementation(
+				async (_msg: unknown, opts: { onDelta: CursorDeltaHandler; onStep: CursorStepHandler }) => {
+					sendCallCount += 1;
+					if (sendCallCount === 1) {
+						opts.onDelta({ update: { type: "text-delta", text: "Hello" } });
+						return {
+							id: "run-1",
+							agentId: "agent-1",
+							status: "finished",
+							wait: vi.fn().mockResolvedValue({ id: "run-1", status: "finished", result: "Hello" }),
+							cancel: vi.fn(),
+							supports: () => true,
+							unsupportedReason: () => undefined,
+						};
+					}
 
-			turn2OnDelta = opts.onDelta;
-			return {
-				id: "run-2",
-				agentId: "agent-1",
-				status: "running",
-				wait: vi.fn(
-					() =>
-						new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
-							resolveTurn2Run = resolve;
-						}),
-				),
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
+					turn2OnDelta = opts.onDelta;
+					return {
+						id: "run-2",
+						agentId: "agent-1",
+						status: "running",
+						wait: vi.fn(
+							() =>
+								new Promise<{ id: string; status: "finished"; result: string }>((resolve) => {
+									resolveTurn2Run = resolve;
+								}),
+						),
+						cancel: vi.fn(),
+						supports: () => true,
+						unsupportedReason: () => undefined,
+					};
+				},
+			);
 		mockedCreate.mockResolvedValue({
 			agentId: "agent-1",
 			send: mockSend,
@@ -361,23 +401,52 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 		});
 
 		const firstContext = makeContext();
-		await collectEvents(streamCursor(makeModel("composer-2"), firstContext, { apiKey: "test-key" }));
+		await collectEvents(
+			streamCursor(makeModel("composer-2"), firstContext, { apiKey: "test-key" }),
+		);
 
 		const followUpContext = makeContext();
 		followUpContext.messages = [
 			...firstContext.messages,
-			{ role: "assistant", content: [{ type: "text", text: "Hello" }], api: "cursor-sdk", provider: "cursor", model: "test-model", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 },
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "Hello" }],
+				api: "cursor-sdk",
+				provider: "cursor",
+				model: "test-model",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: 2,
+			},
 			{ role: "user", content: "Read README", timestamp: 3 },
 		];
 
-		const secondEventsPromise = collectEvents(streamCursor(makeModel("composer-2"), followUpContext, { apiKey: "test-key" }));
+		const secondEventsPromise = collectEvents(
+			streamCursor(makeModel("composer-2"), followUpContext, { apiKey: "test-key" }),
+		);
 		await vi.waitFor(() => expect(mockSend).toHaveBeenCalledTimes(2));
 
 		const createOptions = getCreatedAgentOptions();
 		const { client, transport } = await connectMcpClient(createOptions.mcpServers.pi_tools.url);
 		try {
-			const readCallPromise = client.callTool({ name: "pi__read", arguments: { path: "README.md" } });
-			turn2OnDelta?.({ update: { type: "tool-call-started", callId: "mcp-read", toolCall: { name: "mcp", args: { toolName: "pi__read" } } } });
+			const readCallPromise = client.callTool({
+				name: "pi__read",
+				arguments: { path: "README.md" },
+			});
+			turn2OnDelta?.({
+				update: {
+					type: "tool-call-started",
+					callId: "mcp-read",
+					toolCall: { name: "mcp", args: { toolName: "pi__read" } },
+				},
+			});
 
 			const secondEvents = await secondEventsPromise;
 			const secondDone = getDoneEvent(secondEvents);
@@ -398,9 +467,17 @@ it("keeps the session agent alive after a successful text-only turn", async () =
 				timestamp: 4,
 			};
 			const replayContext = makeContext();
-			replayContext.messages = [...followUpContext.messages, secondDone.message, readToolResultMessage];
-			const replayEventsPromise = collectEvents(streamCursor(makeModel("composer-2"), replayContext, { apiKey: "test-key" }));
-			await expect(readCallPromise).resolves.toMatchObject({ content: [{ type: "text", text: "file contents" }] });
+			replayContext.messages = [
+				...followUpContext.messages,
+				secondDone.message,
+				readToolResultMessage,
+			];
+			const replayEventsPromise = collectEvents(
+				streamCursor(makeModel("composer-2"), replayContext, { apiKey: "test-key" }),
+			);
+			await expect(readCallPromise).resolves.toMatchObject({
+				content: [{ type: "text", text: "file contents" }],
+			});
 			resolveTurn2Run({ id: "run-2", status: "finished", result: "Done reading." });
 			const replayEvents = await replayEventsPromise;
 

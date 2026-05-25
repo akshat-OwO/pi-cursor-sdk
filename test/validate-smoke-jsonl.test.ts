@@ -22,7 +22,10 @@ function runValidator(smokeDir: string, extraArgs: string[] = []) {
 function writeSessionJsonl(smokeDir: string, name: string, lines: unknown[]): void {
 	const sessionDir = join(smokeDir, name);
 	mkdirSync(sessionDir, { recursive: true });
-	writeFileSync(join(sessionDir, "session.jsonl"), `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+	writeFileSync(
+		join(sessionDir, "session.jsonl"),
+		`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+	);
 }
 
 describe("validate-smoke-jsonl", () => {
@@ -66,7 +69,9 @@ describe("validate-smoke-jsonl", () => {
 
 	it("fails JSONL files with no assistant messages", () => {
 		const smokeDir = makeSmokeDir();
-		writeSessionJsonl(smokeDir, "no-assistant", [{ type: "message", message: { role: "user", content: "hi" } }]);
+		writeSessionJsonl(smokeDir, "no-assistant", [
+			{ type: "message", message: { role: "user", content: "hi" } },
+		]);
 
 		const result = runValidator(smokeDir);
 
@@ -77,7 +82,10 @@ describe("validate-smoke-jsonl", () => {
 	it("fails assistant messages with missing or non-zero-cache usage", () => {
 		const smokeDir = makeSmokeDir();
 		writeSessionJsonl(smokeDir, "bad-usage", [
-			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "missing" }] } },
+			{
+				type: "message",
+				message: { role: "assistant", content: [{ type: "text", text: "missing" }] },
+			},
 			{
 				type: "message",
 				message: {
@@ -165,7 +173,12 @@ describe("validate-smoke-jsonl", () => {
 				message: {
 					role: "toolResult",
 					toolName: "read",
-					content: [{ type: "text", text: "The replay scan fails on records containing:\n\n- Tool grep not found\n- Tool cursor not found" }],
+					content: [
+						{
+							type: "text",
+							text: "The replay scan fails on records containing:\n\n- Tool grep not found\n- Tool cursor not found",
+						},
+					],
 					isError: false,
 				},
 			},

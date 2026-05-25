@@ -2,25 +2,25 @@
 	"name": "pi-cursor-sdk",
 	"version": "0.1.18",
 	"description": "pi provider extension backed by @cursor/sdk local agents",
-	"author": "Mitch Fultz (https://github.com/fitchmultz)",
-	"license": "MIT",
 	"keywords": [
-		"pi-package",
-		"pi",
-		"pi-extension",
+		"ai",
 		"cursor",
 		"cursor-sdk",
-		"ai",
-		"extension"
+		"extension",
+		"pi",
+		"pi-extension",
+		"pi-package"
 	],
+	"homepage": "https://github.com/fitchmultz/pi-cursor-sdk#readme",
+	"bugs": {
+		"url": "https://github.com/fitchmultz/pi-cursor-sdk/issues"
+	},
+	"license": "MIT",
+	"author": "Mitch Fultz (https://github.com/fitchmultz)",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/fitchmultz/pi-cursor-sdk.git"
 	},
-	"bugs": {
-		"url": "https://github.com/fitchmultz/pi-cursor-sdk/issues"
-	},
-	"homepage": "https://github.com/fitchmultz/pi-cursor-sdk#readme",
 	"files": [
 		"index.ts",
 		"src",
@@ -41,10 +41,6 @@
 		"CHANGELOG.md"
 	],
 	"type": "module",
-	"packageManager": "pnpm@10.32.1",
-	"engines": {
-		"node": ">=22.19.0"
-	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
@@ -53,11 +49,27 @@
 		"smoke:live": "scripts/tmux-live-smoke.sh",
 		"smoke:isolated": "scripts/isolated-cursor-smoke.sh",
 		"smoke:steering": "node scripts/steering-rpc-smoke.mjs",
-		"smoke:jsonl": "node scripts/validate-smoke-jsonl.mjs"
+		"smoke:jsonl": "node scripts/validate-smoke-jsonl.mjs",
+		"lint": "oxlint src test scripts",
+		"lint:fix": "oxlint --fix src test scripts",
+		"format": "oxfmt",
+		"format:check": "oxfmt --check",
+		"pi:package:local": "node scripts/pi-cursor-sdk-package.mjs local",
+		"pi:package:remote": "node scripts/pi-cursor-sdk-package.mjs remote"
 	},
 	"dependencies": {
 		"@cursor/sdk": "^1.0.13",
 		"@modelcontextprotocol/sdk": "^1.29.0"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-ai": "^0.75.5",
+		"@earendil-works/pi-coding-agent": "^0.75.5",
+		"@earendil-works/pi-tui": "^0.75.5",
+		"oxfmt": "^0.51.0",
+		"oxlint": "^1.66.0",
+		"typebox": "^1.1.38",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.6"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
@@ -65,21 +77,17 @@
 		"@earendil-works/pi-tui": "*",
 		"typebox": "*"
 	},
-	"devDependencies": {
-		"@earendil-works/pi-ai": "^0.75.5",
-		"@earendil-works/pi-coding-agent": "^0.75.5",
-		"@earendil-works/pi-tui": "^0.75.5",
-		"typebox": "^1.1.38",
-		"typescript": "^6.0.3",
-		"vitest": "^4.1.6"
+	"overrides": {
+		"sqlite3": "6.0.1",
+		"undici": "7.25.0"
 	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"packageManager": "pnpm@10.32.1",
 	"pi": {
 		"extensions": [
 			"./index.ts"
 		]
-	},
-	"overrides": {
-		"undici": "7.25.0",
-		"sqlite3": "6.0.1"
 	}
 }

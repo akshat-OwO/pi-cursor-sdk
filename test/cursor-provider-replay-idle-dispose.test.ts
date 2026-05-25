@@ -29,55 +29,69 @@ import {
 	type CursorStepHandler,
 	type RegisteredTool,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
-import { estimateCursorPromptMessageTokens } from "../src/context.js";
-import { __testUtils as nativeToolDisplayTestUtils } from "../src/cursor-native-tool-display.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
+import { estimateCursorPromptMessageTokens } from "../src/context/context.js";
+import { __testUtils as nativeToolDisplayTestUtils } from "../src/replay/cursor-native-tool-display.js";
 import type { Context } from "@earendil-works/pi-ai";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-
 describe("streamCursor native replay idle dispose", () => {
 	beforeEach(resetCursorProviderTestState);
 
-it("disposes abandoned native replay runs after the idle timeout and abandons the session agent", async () => {
+	it("disposes abandoned native replay runs after the idle timeout and abandons the session agent", async () => {
 		process.env.PI_CURSOR_NATIVE_TOOL_DISPLAY = "1";
 		cursorProviderTestUtils.setCursorNativeReplayIdleDisposeMs(1);
 		const registeredTools: RegisteredTool[] = [];
 		await registerNativeToolDisplayForTest(registeredTools);
 
 		const mockDispose = vi.fn().mockResolvedValue(undefined);
-		const runWait = vi.fn(() => new Promise<{ id: string; status: "finished"; result: string }>(() => {}));
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "README.md" } }, callId: "c1" } });
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "read",
-						result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+		const runWait = vi.fn(
+			() => new Promise<{ id: string; status: "finished"; result: string }>(() => {}),
+		);
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "read", args: { path: "README.md" } },
+						callId: "c1",
 					},
-					callId: "c1",
-				},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "read",
+							result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+						},
+						callId: "c1",
+					},
+				});
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "running",
+					wait: runWait,
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "running",
-				wait: runWait,
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			agentId: "agent-1",
 			send: mockSend,
 			[Symbol.asyncDispose]: mockDispose,
 		});
 
-		const events = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const events = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const done = getDoneEvent(events);
 
 		expect(done.reason).toBe("toolUse");
@@ -104,39 +118,55 @@ it("disposes abandoned native replay runs after the idle timeout and abandons th
 					resolveRun = resolve;
 				}),
 		);
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "README.md" } }, callId: "c1" } });
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "read",
-						result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "read", args: { path: "README.md" } },
+						callId: "c1",
 					},
-					callId: "c1",
-				},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "read",
+							result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+						},
+						callId: "c1",
+					},
+				});
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "running",
+					wait: runWait,
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "running",
-				wait: runWait,
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			agentId: "agent-1",
 			send: mockSend,
 			[Symbol.asyncDispose]: mockDispose,
 		});
 
-		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const firstEvents = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const firstDone = getDoneEvent(firstEvents);
 		const toolCall = firstDone.message.content.find(isToolCallBlock);
 		const readTool = registeredTools.find((tool) => tool.name === "read");
-		const toolResult = await readTool.execute(toolCall.id, toolCall.arguments, undefined, undefined, {});
+		const toolResult = await readTool.execute(
+			toolCall.id,
+			toolCall.arguments,
+			undefined,
+			undefined,
+			{},
+		);
 
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(1);
 		expect(mockDispose).not.toHaveBeenCalled();
@@ -156,7 +186,9 @@ it("disposes abandoned native replay runs after the idle timeout and abandons th
 			},
 		];
 
-		const replayEventsPromise = collectEvents(streamCursor(makeModel(), replayContext, { apiKey: "test-key", signal: controller.signal }));
+		const replayEventsPromise = collectEvents(
+			streamCursor(makeModel(), replayContext, { apiKey: "test-key", signal: controller.signal }),
+		);
 		await Promise.resolve();
 		controller.abort();
 		const replayEvents = await replayEventsPromise;
@@ -188,39 +220,55 @@ it("disposes abandoned native replay runs after the idle timeout and abandons th
 					resolveRun = resolve;
 				}),
 		);
-		const mockSend = vi.fn().mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
-			opts.onDelta({ update: { type: "tool-call-started", toolCall: { name: "read", args: { path: "README.md" } }, callId: "c1" } });
-			opts.onDelta({
-				update: {
-					type: "tool-call-completed",
-					toolCall: {
-						name: "read",
-						result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+		const mockSend = vi
+			.fn()
+			.mockImplementation(async (_msg: unknown, opts: { onDelta: CursorDeltaHandler }) => {
+				opts.onDelta({
+					update: {
+						type: "tool-call-started",
+						toolCall: { name: "read", args: { path: "README.md" } },
+						callId: "c1",
 					},
-					callId: "c1",
-				},
+				});
+				opts.onDelta({
+					update: {
+						type: "tool-call-completed",
+						toolCall: {
+							name: "read",
+							result: { status: "success", value: { content: "# pi-cursor-sdk" } },
+						},
+						callId: "c1",
+					},
+				});
+				return {
+					id: "run-1",
+					agentId: "agent-1",
+					status: "running",
+					wait: runWait,
+					cancel: vi.fn(),
+					supports: () => true,
+					unsupportedReason: () => undefined,
+				};
 			});
-			return {
-				id: "run-1",
-				agentId: "agent-1",
-				status: "running",
-				wait: runWait,
-				cancel: vi.fn(),
-				supports: () => true,
-				unsupportedReason: () => undefined,
-			};
-		});
 		mockedCreate.mockResolvedValue({
 			agentId: "agent-1",
 			send: mockSend,
 			[Symbol.asyncDispose]: mockDispose,
 		});
 
-		const firstEvents = await collectEvents(streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }));
+		const firstEvents = await collectEvents(
+			streamCursor(makeModel(), makeContext(), { apiKey: "test-key" }),
+		);
 		const firstDone = getDoneEvent(firstEvents);
 		const toolCall = firstDone.message.content.find(isToolCallBlock);
 		const readTool = registeredTools.find((tool) => tool.name === "read");
-		const toolResult = await readTool!.execute(toolCall.id, toolCall.arguments, undefined, undefined, {});
+		const toolResult = await readTool!.execute(
+			toolCall.id,
+			toolCall.arguments,
+			undefined,
+			undefined,
+			{},
+		);
 		expect(cursorProviderTestUtils.pendingCursorNativeRunCount()).toBe(1);
 
 		const replayContext = makeContext();
@@ -254,8 +302,12 @@ it("disposes abandoned native replay runs after the idle timeout and abandons th
 			dispatchEvent: vi.fn(() => true),
 		} satisfies AbortSignal;
 		const replayEvents = await Promise.race([
-			collectEvents(streamCursor(makeModel(), replayContext, { apiKey: "test-key", signal: fakeSignal })),
-			new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for aborted replay")), 100)),
+			collectEvents(
+				streamCursor(makeModel(), replayContext, { apiKey: "test-key", signal: fakeSignal }),
+			),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error("Timed out waiting for aborted replay")), 100),
+			),
 		]);
 		const error = getErrorEvent(replayEvents);
 

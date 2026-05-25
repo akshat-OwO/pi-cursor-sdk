@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Context, ToolResultMessage } from "@earendil-works/pi-ai";
-import { estimateCursorPromptMessageTokens } from "../src/context.js";
+import { estimateCursorPromptMessageTokens } from "../src/context/context.js";
 import {
 	consumeCursorLiveToolResults,
 	createCursorLiveRunAccountingState,
 	takeCursorLiveTurnInputTokens,
-} from "../src/cursor-live-run-accounting.js";
+} from "../src/provider/cursor-live-run-accounting.js";
 
 function makeToolResult(toolCallId: string, text: string): ToolResultMessage {
 	return {
@@ -22,7 +22,10 @@ describe("cursor live-run accounting", () => {
 	it("counts the original prompt once and consumes matching tool results once", () => {
 		const promptInputTokens = 100;
 		const matchingFirst = makeToolResult("cursor-replay-run-tool-1", "first result");
-		const matchingDuplicate = makeToolResult("cursor-replay-run-tool-1", "duplicate result should not count");
+		const matchingDuplicate = makeToolResult(
+			"cursor-replay-run-tool-1",
+			"duplicate result should not count",
+		);
 		const matchingSecond = makeToolResult("cursor-replay-run-tool-2", "second result");
 		const nonmatching = makeToolResult("other-run-tool-1", "other result");
 		const context: Context = {
@@ -41,21 +44,30 @@ describe("cursor live-run accounting", () => {
 			context,
 			(toolResult) => toolResult.toolCallId.startsWith("cursor-replay-run-"),
 		);
-		const expectedToolResultInput = estimateCursorPromptMessageTokens(matchingFirst) + estimateCursorPromptMessageTokens(matchingSecond);
+		const expectedToolResultInput =
+			estimateCursorPromptMessageTokens(matchingFirst) +
+			estimateCursorPromptMessageTokens(matchingSecond);
 
-		expect(firstConsumption.toolCallIds).toEqual([matchingFirst.toolCallId, matchingSecond.toolCallId]);
+		expect(firstConsumption.toolCallIds).toEqual([
+			matchingFirst.toolCallId,
+			matchingSecond.toolCallId,
+		]);
 		expect(firstConsumption.toolResults).toEqual([matchingFirst, matchingSecond]);
 		expect(firstConsumption.toolResultInputTokens).toBe(expectedToolResultInput);
 
-		const firstTurn = takeCursorLiveTurnInputTokens(firstConsumption.state, firstConsumption.toolResultInputTokens);
+		const firstTurn = takeCursorLiveTurnInputTokens(
+			firstConsumption.state,
+			firstConsumption.toolResultInputTokens,
+		);
 		expect(firstTurn.sessionInputTokens).toBe(promptInputTokens + expectedToolResultInput);
 
-		const secondConsumption = consumeCursorLiveToolResults(
-			firstTurn.state,
-			context,
-			(toolResult) => toolResult.toolCallId.startsWith("cursor-replay-run-"),
+		const secondConsumption = consumeCursorLiveToolResults(firstTurn.state, context, (toolResult) =>
+			toolResult.toolCallId.startsWith("cursor-replay-run-"),
 		);
-		const secondTurn = takeCursorLiveTurnInputTokens(secondConsumption.state, secondConsumption.toolResultInputTokens);
+		const secondTurn = takeCursorLiveTurnInputTokens(
+			secondConsumption.state,
+			secondConsumption.toolResultInputTokens,
+		);
 
 		expect(secondConsumption.toolCallIds).toEqual([]);
 		expect(secondConsumption.toolResultInputTokens).toBe(0);
@@ -76,7 +88,10 @@ describe("cursor live-run accounting", () => {
 		expect(consumption.toolResultInputTokens).toBe(0);
 		expect(consumption.state.consumedToolResultIds.has(toolResult.toolCallId)).toBe(false);
 
-		const firstTurn = takeCursorLiveTurnInputTokens(consumption.state, consumption.toolResultInputTokens);
+		const firstTurn = takeCursorLiveTurnInputTokens(
+			consumption.state,
+			consumption.toolResultInputTokens,
+		);
 		expect(firstTurn.sessionInputTokens).toBe(promptInputTokens);
 	});
 });

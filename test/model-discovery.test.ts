@@ -10,8 +10,11 @@ import {
 	getCursorModelMetadataEntries,
 	__testUtils,
 	type CursorModelFallbackIssue,
-} from "../src/model-discovery.js";
-import { saveCachedContextWindow, __testUtils as contextWindowCacheTestUtils } from "../src/context-window-cache.js";
+} from "../src/discovery/model-discovery.js";
+import {
+	saveCachedContextWindow,
+	__testUtils as contextWindowCacheTestUtils,
+} from "../src/discovery/context-window-cache.js";
 
 vi.mock("@cursor/sdk", () => ({
 	Cursor: {
@@ -130,7 +133,10 @@ describe("discoverModels", () => {
 
 		const cachePath = __testUtils.getModelCatalogCachePath();
 		expect(existsSync(cachePath)).toBe(true);
-		const cache = JSON.parse(readFileSync(cachePath, "utf-8")) as { version?: number; models?: Array<{ id?: string }> };
+		const cache = JSON.parse(readFileSync(cachePath, "utf-8")) as {
+			version?: number;
+			models?: Array<{ id?: string }>;
+		};
 		expect(cache.version).toBe(1);
 		expect(cache.models?.map((model) => model.id)).toEqual(["composer-2"]);
 	});
@@ -233,8 +239,12 @@ describe("discoverModels", () => {
 	});
 
 	it("parses pi --api-key=value for model discovery", () => {
-		expect(__testUtils.getCliApiKeyFromArgv(["node", "pi", "--api-key=cli-key-123"])).toBe("cli-key-123");
-		expect(__testUtils.getCliApiKeyFromArgv(["node", "pi", "--api-key", "--list-models"])).toBeUndefined();
+		expect(__testUtils.getCliApiKeyFromArgv(["node", "pi", "--api-key=cli-key-123"])).toBe(
+			"cli-key-123",
+		);
+		expect(
+			__testUtils.getCliApiKeyFromArgv(["node", "pi", "--api-key", "--list-models"]),
+		).toBeUndefined();
 	});
 
 	it("calls Cursor.models.list with API key and sorts by base id", async () => {
@@ -263,22 +273,43 @@ describe("discoverModels", () => {
 			{
 				id: "z-model",
 				displayName: "Z Model",
-				parameters: [{ id: "context", displayName: "Context", values: [{ value: "long" }, { value: "short" }] }],
-				variants: [{ params: [{ id: "context", value: "short" }], displayName: "Z Model", isDefault: true }],
+				parameters: [
+					{
+						id: "context",
+						displayName: "Context",
+						values: [{ value: "long" }, { value: "short" }],
+					},
+				],
+				variants: [
+					{ params: [{ id: "context", value: "short" }], displayName: "Z Model", isDefault: true },
+				],
 			},
 			{
 				id: "a-model",
 				displayName: "A Model",
-				parameters: [{ id: "context", displayName: "Context", values: [{ value: "300k" }, { value: "1m" }] }],
-				variants: [{ params: [{ id: "context", value: "1m" }], displayName: "A Model", isDefault: true }],
+				parameters: [
+					{ id: "context", displayName: "Context", values: [{ value: "300k" }, { value: "1m" }] },
+				],
+				variants: [
+					{ params: [{ id: "context", value: "1m" }], displayName: "A Model", isDefault: true },
+				],
 			},
 		]);
 
 		const models = await discoverModels();
 
-		expect(models.map((model) => model.id)).toEqual(["a-model@300k", "a-model@1m", "z-model@long", "z-model@short"]);
-		expect(getCursorModelMetadata("a-model@300k")?.defaultParams).toEqual([{ id: "context", value: "300k" }]);
-		expect(getCursorModelMetadata("z-model@long")?.defaultParams).toEqual([{ id: "context", value: "long" }]);
+		expect(models.map((model) => model.id)).toEqual([
+			"a-model@300k",
+			"a-model@1m",
+			"z-model@long",
+			"z-model@short",
+		]);
+		expect(getCursorModelMetadata("a-model@300k")?.defaultParams).toEqual([
+			{ id: "context", value: "300k" },
+		]);
+		expect(getCursorModelMetadata("z-model@long")?.defaultParams).toEqual([
+			{ id: "context", value: "long" },
+		]);
 	});
 
 	it("registers Cursor model aliases with the same params and context variants", async () => {
@@ -290,7 +321,11 @@ describe("discoverModels", () => {
 				aliases: ["gpt-latest", "gpt-latest", ""],
 				parameters: [
 					{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "272k" }] },
-					{ id: "reasoning", displayName: "Reasoning", values: [{ value: "none" }, { value: "medium" }] },
+					{
+						id: "reasoning",
+						displayName: "Reasoning",
+						values: [{ value: "none" }, { value: "medium" }],
+					},
 				],
 				variants: [
 					{
@@ -307,7 +342,12 @@ describe("discoverModels", () => {
 
 		const models = await discoverModels();
 
-		expect(models.map((model) => model.id)).toEqual(["gpt-5.5@1m", "gpt-5.5@272k", "gpt-latest@1m", "gpt-latest@272k"]);
+		expect(models.map((model) => model.id)).toEqual([
+			"gpt-5.5@1m",
+			"gpt-5.5@272k",
+			"gpt-latest@1m",
+			"gpt-latest@272k",
+		]);
 		expect(models[2].name).toBe("GPT-5.5 (gpt-latest) @ 1m");
 		expect(getCursorModelMetadata("gpt-latest@272k")).toMatchObject({
 			baseModelId: "gpt-5.5",
@@ -342,7 +382,12 @@ describe("discoverModels", () => {
 
 		const models = await discoverModels();
 
-		expect(models.map((model) => model.id)).toEqual(["model-a", "model-latest", "model-b", "model-stable"]);
+		expect(models.map((model) => model.id)).toEqual([
+			"model-a",
+			"model-latest",
+			"model-b",
+			"model-stable",
+		]);
 		expect(getCursorModelMetadata("model-shared")).toBeUndefined();
 	});
 
@@ -481,7 +526,13 @@ describe("discoverModels", () => {
 				id: "reasoning-only",
 				displayName: "Reasoning Only",
 				parameters: [{ id: "reasoning", displayName: "Reasoning", values: [{ value: "high" }] }],
-				variants: [{ params: [{ id: "reasoning", value: "high" }], displayName: "Reasoning Only", isDefault: true }],
+				variants: [
+					{
+						params: [{ id: "reasoning", value: "high" }],
+						displayName: "Reasoning Only",
+						isDefault: true,
+					},
+				],
 			},
 		]);
 		const models = await discoverModels();
@@ -497,8 +548,12 @@ describe("discoverModels", () => {
 				{
 					id: "composer-2",
 					displayName: "Composer 2",
-					parameters: [{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] }],
-					variants: [{ params: [{ id: "fast", value: "true" }], displayName: "Composer 2", isDefault: true }],
+					parameters: [
+						{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] },
+					],
+					variants: [
+						{ params: [{ id: "fast", value: "true" }], displayName: "Composer 2", isDefault: true },
+					],
 				},
 				{
 					id: "new-sdk-model",
@@ -551,8 +606,12 @@ describe("discoverModels", () => {
 				{
 					id: "gpt-5.5",
 					displayName: "GPT-5.5",
-					parameters: [{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "272k" }] }],
-					variants: [{ params: [{ id: "context", value: "1m" }], displayName: "GPT-5.5", isDefault: true }],
+					parameters: [
+						{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "272k" }] },
+					],
+					variants: [
+						{ params: [{ id: "context", value: "1m" }], displayName: "GPT-5.5", isDefault: true },
+					],
 				},
 			]);
 
@@ -577,8 +636,12 @@ describe("discoverModels", () => {
 				{
 					id: "composer-2",
 					displayName: "Composer 2",
-					parameters: [{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] }],
-					variants: [{ params: [{ id: "fast", value: "true" }], displayName: "Composer 2", isDefault: true }],
+					parameters: [
+						{ id: "fast", displayName: "Fast", values: [{ value: "false" }, { value: "true" }] },
+					],
+					variants: [
+						{ params: [{ id: "fast", value: "true" }], displayName: "Composer 2", isDefault: true },
+					],
 				},
 			]);
 
@@ -685,7 +748,11 @@ describe("discoverModels", () => {
 				id: "claude-opus-4-7",
 				displayName: "Opus 4.7",
 				parameters: [
-					{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
+					{
+						id: "thinking",
+						displayName: "Thinking",
+						values: [{ value: "false" }, { value: "true" }],
+					},
 					{ id: "context", displayName: "Context", values: [{ value: "300k" }, { value: "1m" }] },
 					{
 						id: "effort",
@@ -755,7 +822,13 @@ describe("discoverModels", () => {
 						values: [{ value: "low" }, { value: "medium" }, { value: "high" }],
 					},
 				],
-				variants: [{ params: [{ id: "reasoning", value: "medium" }], displayName: "Reasoning Only", isDefault: true }],
+				variants: [
+					{
+						params: [{ id: "reasoning", value: "medium" }],
+						displayName: "Reasoning Only",
+						isDefault: true,
+					},
+				],
 			},
 		]);
 
@@ -782,8 +855,16 @@ describe("discoverModels", () => {
 				id: "claude-like",
 				displayName: "Claude Like",
 				parameters: [
-					{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
-					{ id: "effort", displayName: "Effort", values: [{ value: "low" }, { value: "medium" }, { value: "high" }] },
+					{
+						id: "thinking",
+						displayName: "Thinking",
+						values: [{ value: "false" }, { value: "true" }],
+					},
+					{
+						id: "effort",
+						displayName: "Effort",
+						values: [{ value: "low" }, { value: "medium" }, { value: "high" }],
+					},
 				],
 				variants: [
 					{
@@ -827,7 +908,15 @@ describe("discoverModels", () => {
 		const models = await discoverModels();
 		const modelIds = models.map((model) => model.id);
 
-		expect(modelIds).toEqual(expect.arrayContaining(["composer-2.5", "composer-2.5-fast", "composer-2-5", "composer-2-5-fast", "composer-2"]));
+		expect(modelIds).toEqual(
+			expect.arrayContaining([
+				"composer-2.5",
+				"composer-2.5-fast",
+				"composer-2-5",
+				"composer-2-5-fast",
+				"composer-2",
+			]),
+		);
 		expect(getCursorModelMetadata("composer-2.5")).toEqual(
 			expect.objectContaining({
 				baseModelId: "composer-2.5",
@@ -924,7 +1013,10 @@ describe("discoverModels", () => {
 	it("uses id as name when displayName is missing", async () => {
 		process.env.CURSOR_API_KEY = "test-key-123";
 		mockedList.mockResolvedValueOnce([
-			{ id: "raw-id", variants: [{ params: [], displayName: "raw-id", isDefault: true }] } as ModelListItem,
+			{
+				id: "raw-id",
+				variants: [{ params: [], displayName: "raw-id", isDefault: true }],
+			} as ModelListItem,
 		]);
 		const models = await discoverModels();
 		expect(models[0].name).toBe("raw-id");
@@ -936,7 +1028,13 @@ describe("discoverModels", () => {
 			{
 				id: "test-model",
 				displayName: "Test Model",
-				parameters: [{ id: "reasoning", displayName: "Reasoning", values: [{ value: "low" }, { value: "high" }] }],
+				parameters: [
+					{
+						id: "reasoning",
+						displayName: "Reasoning",
+						values: [{ value: "low" }, { value: "high" }],
+					},
+				],
 				variants: [
 					{ params: [{ id: "reasoning", value: "low" }], displayName: "Test Model" },
 					{ params: [{ id: "reasoning", value: "high" }], displayName: "Test Model" },
@@ -989,17 +1087,16 @@ describe("buildCursorModelSelection", () => {
 				id: "claude-opus-4-7",
 				displayName: "Opus 4.7",
 				parameters: [
-					{ id: "thinking", displayName: "Thinking", values: [{ value: "false" }, { value: "true" }] },
+					{
+						id: "thinking",
+						displayName: "Thinking",
+						values: [{ value: "false" }, { value: "true" }],
+					},
 					{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "300k" }] },
 					{
 						id: "effort",
 						displayName: "Effort",
-						values: [
-							{ value: "low" },
-							{ value: "medium" },
-							{ value: "high" },
-							{ value: "xhigh" },
-						],
+						values: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }],
 					},
 				],
 				variants: [

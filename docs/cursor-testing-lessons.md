@@ -114,17 +114,17 @@ Every live check should use its own `--session-dir` under the isolated tree. Do 
 
 ## Harness traps we hit repeatedly
 
-| Trap | What went wrong | Fix |
-| --- | --- | --- |
-| Clean `HOME` without auth | `pi` could not authenticate Cursor in isolated runs | Copy `~/.pi/agent/auth.json` into isolated `HOME` |
-| `npm pack \| tail -1` | Captured npm notice text, not tarball path | Use `ls -t "$PACK_DIR"/*.tgz \| head -1` |
-| Packed extension, no install | Provider never loaded in isolated project | Run `npm install --omit=dev` inside extracted package |
-| Inherited shell env | mise/profile hooks hung or polluted runs | Use `env -i ... MISE_DISABLE=1` for isolated pi calls |
-| No per-check timeout | One stuck prompt blocked entire harness | Wrap each live check with timeout/watchdog |
-| stdout-only assertions | Missed replay failures persisted only in JSONL | Scan JSONL for `Tool grep/cursor/find/ls not found` |
-| Naive JSONL substring scan | Successful `read` of docs mentioning replay errors looked like failures | `validate-smoke-jsonl.mjs` only flags error `toolResult` / error assistant messages |
-| Plan strip only on first turn | Under-tested multi-turn resync | Shim strips on every `turn_start`; stress multi-turn separately |
-| Assuming env auth equals pi auth | False "blocked" or false "pass" in CI-like shells | Check `auth.json` provider keys explicitly when needed |
+| Trap                             | What went wrong                                                         | Fix                                                                                 |
+| -------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Clean `HOME` without auth        | `pi` could not authenticate Cursor in isolated runs                     | Copy `~/.pi/agent/auth.json` into isolated `HOME`                                   |
+| `npm pack \| tail -1`            | Captured npm notice text, not tarball path                              | Use `ls -t "$PACK_DIR"/*.tgz \| head -1`                                            |
+| Packed extension, no install     | Provider never loaded in isolated project                               | Run `npm install --omit=dev` inside extracted package                               |
+| Inherited shell env              | mise/profile hooks hung or polluted runs                                | Use `env -i ... MISE_DISABLE=1` for isolated pi calls                               |
+| No per-check timeout             | One stuck prompt blocked entire harness                                 | Wrap each live check with timeout/watchdog                                          |
+| stdout-only assertions           | Missed replay failures persisted only in JSONL                          | Scan JSONL for `Tool grep/cursor/find/ls not found`                                 |
+| Naive JSONL substring scan       | Successful `read` of docs mentioning replay errors looked like failures | `validate-smoke-jsonl.mjs` only flags error `toolResult` / error assistant messages |
+| Plan strip only on first turn    | Under-tested multi-turn resync                                          | Shim strips on every `turn_start`; stress multi-turn separately                     |
+| Assuming env auth equals pi auth | False "blocked" or false "pass" in CI-like shells                       | Check `auth.json` provider keys explicitly when needed                              |
 
 ## JSONL is the source of truth for replay regressions
 
@@ -157,7 +157,7 @@ Successful tool results are ignored even when file contents mention those string
 
 ### False-positive edge case (2026-05-23)
 
-Plan-strip live smoke can make Cursor `read` testing docs that *document* replay failure strings. A naive whole-record JSON scan reported four failures from one successful `read` toolResult (`isError: false`).
+Plan-strip live smoke can make Cursor `read` testing docs that _document_ replay failure strings. A naive whole-record JSON scan reported four failures from one successful `read` toolResult (`isError: false`).
 
 When changing replay scan logic:
 

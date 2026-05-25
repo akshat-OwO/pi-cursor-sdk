@@ -29,20 +29,21 @@ import {
 	type CursorStepHandler,
 	type RegisteredTool,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
-import { __testUtils as contextWindowCacheTestUtils } from "../src/context-window-cache.js";
-import { __testUtils as modelDiscoveryTestUtils } from "../src/model-discovery.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
+import { __testUtils as contextWindowCacheTestUtils } from "../src/discovery/context-window-cache.js";
+import { __testUtils as modelDiscoveryTestUtils } from "../src/discovery/model-discovery.js";
 import type { Context } from "@earendil-works/pi-ai";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-
-
 describe("streamCursor auth and abort", () => {
 	beforeEach(resetCursorProviderTestState);
 
-it("aborts after agent creation without sending a prompt when already cancelled", async () => {
+	it("aborts after agent creation without sending a prompt when already cancelled", async () => {
 		const controller = new AbortController();
 		const mockDispose = vi.fn().mockResolvedValue(undefined);
 		const mockSend = vi.fn();
@@ -54,7 +55,10 @@ it("aborts after agent creation without sending a prompt when already cancelled"
 			};
 		});
 
-		const stream = streamCursor(makeModel(), makeContext(), { apiKey: "test-key", signal: controller.signal });
+		const stream = streamCursor(makeModel(), makeContext(), {
+			apiKey: "test-key",
+			signal: controller.signal,
+		});
 		const events = await collectEvents(stream);
 		const error = getErrorEvent(events);
 

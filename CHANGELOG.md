@@ -7,6 +7,8 @@
 - **Breaking:** Replace Cursor fast extension state with pi model variants. Models that expose Cursor `fast` now register both `cursor/<id>` (`fast=false`) and `cursor/<id>-fast` (`fast=true`). Context-qualified models follow the same pattern, for example `cursor/gpt-5.5@1m-fast`.
 - Remove `/cursor-fast`, `--cursor-fast`, and `--cursor-no-fast`, plus saved fast defaults in `~/.pi/agent/cursor-sdk.json`. Select fast mode through native pi model selection instead.
 - Update README, UX spec, smoke scripts, and maintainer docs for the new fast model variant contract.
+- Restructure `src/` into domain folders (`provider/`, `bridge/`, `replay/`, `transcript/`, `discovery/`, `context/`, `session/`, `task/`, `settings/`, `shared/`); see `src/README.md`.
+- Add Oxlint (`npm run lint`) and Oxfmt (`npm run format`) with committed `.oxlintrc.json` and `.oxfmtrc.json` configs.
 
 ## 0.1.18 - 2026-05-23
 
@@ -120,26 +122,29 @@
 ## 0.1.14 - 2026-05-18
 
 ### Changed
+
 - Refreshed the Cursor fallback model snapshot and bundled default/non-Max context-window cache from the current `@cursor/sdk` 1.0.13 catalog, including Composer 2.5 (`composer-2.5` and `composer-2-5`) with default fast-mode support.
 - Updated README, demo, and maintainer model UX docs to use Composer 2.5 as the primary Composer example.
 
 ## 0.1.13 - 2026-05-18
 
 ### Fixed
+
 - Restored lightweight GitHub pi install behavior by removing bundled dependency metadata from the published package. The package already uses the latest `@cursor/sdk` `1.0.13`; local and GitHub installs continue to use the repo-level audited lockfile and overrides.
 
 ## 0.1.12 - 2026-05-18
 
 ### Fixed
+
 - Bundle the audited `@cursor/sdk` dependency tree so `pi install npm:pi-cursor-sdk` preserves patched `sqlite3`, `tar`, and `undici` transitive versions even though npm package-level `overrides` are not applied when the package is installed as a dependency.
 
 ## 0.1.11 - 2026-05-18
 
 ### Changed
+
 - Updated the local pi package baseline to `@earendil-works/*` `0.75.3`, including the Node.js `>=22.19.0` runtime floor and refreshed npm lockfile.
 - Added prompt metadata for the non-mutating Cursor replay tools so pi can describe `cursor_edit` and `cursor_write` more clearly in tool guidance.
 - Removed tracked CueLoop runtime state from the repository and ignored local `.cueloop/` artifacts.
-
 
 ## 0.1.10 - 2026-05-15
 

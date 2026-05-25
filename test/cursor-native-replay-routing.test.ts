@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { Context } from "@earendil-works/pi-ai";
-import { __testUtils as nativeToolDisplayTestUtils } from "../src/cursor-native-tool-display.js";
+import { __testUtils as nativeToolDisplayTestUtils } from "../src/replay/cursor-native-tool-display.js";
 import {
 	isNativeToolActiveInContext,
 	partitionNativeToolsByActiveContext,
 	resolveNativeReplayDisposition,
-} from "../src/cursor-native-replay-routing.js";
+} from "../src/replay/cursor-native-replay-routing.js";
 
 describe("cursor-native-replay-routing", () => {
 	beforeEach(() => {

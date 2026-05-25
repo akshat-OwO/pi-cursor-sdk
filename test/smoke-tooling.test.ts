@@ -31,7 +31,12 @@ describe("smoke tooling package checks", () => {
 	it("packages smoke scripts and avoids reusing the v0.1.16 tarball version", () => {
 		const result = run("npm", ["pack", "--dry-run", "--json"]);
 		expect(result.status).toBe(0);
-		const [pack] = JSON.parse(result.stdout) as Array<{ name: string; version: string; filename: string; files: Array<{ path: string }> }>;
+		const [pack] = JSON.parse(result.stdout) as Array<{
+			name: string;
+			version: string;
+			filename: string;
+			files: Array<{ path: string }>;
+		}>;
 		const paths = new Set(pack.files.map((file) => file.path));
 
 		expect(pack.name).toBe("pi-cursor-sdk");
@@ -43,6 +48,14 @@ describe("smoke tooling package checks", () => {
 		expect(paths.has("scripts/validate-smoke-jsonl.mjs")).toBe(true);
 		expect(paths.has("CHANGELOG.md")).toBe(true);
 		expect(paths.has("README.md")).toBe(true);
-		expect([...paths].some((path) => path.startsWith("dist/") || path.startsWith("coverage/") || path.startsWith(".pi/") || path.includes("smoke-dir"))).toBe(false);
+		expect(
+			[...paths].some(
+				(path) =>
+					path.startsWith("dist/") ||
+					path.startsWith("coverage/") ||
+					path.startsWith(".pi/") ||
+					path.includes("smoke-dir"),
+			),
+		).toBe(false);
 	});
 });
