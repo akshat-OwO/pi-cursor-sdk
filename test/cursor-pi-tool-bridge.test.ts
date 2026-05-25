@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Context } from "@earendil-works/pi-ai";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { __testUtils as nativeToolDisplayTestUtils } from "../src/cursor-native-tool-display.js";
+import { __testUtils as nativeToolDisplayTestUtils } from "../src/replay/cursor-native-tool-display.js";
 import {
 	__testUtils,
 	buildCursorPiToolBridgeSnapshot,
@@ -14,11 +14,15 @@ import {
 	resolveCursorPiToolBridgeDebugEnabled,
 	resolveCursorPiToolBridgeEnabled,
 	type CursorPiToolBridgeRun,
-} from "../src/cursor-pi-tool-bridge.js";
+} from "../src/bridge/cursor-pi-tool-bridge.js";
 
 type TestBridgeSnapshotApi = Parameters<typeof buildCursorPiToolBridgeSnapshot>[0];
 
-function createToolInfo(name: string, description = `${name} description`, parameters = Type.Object({})): ToolInfo {
+function createToolInfo(
+	name: string,
+	description = `${name} description`,
+	parameters = Type.Object({}),
+): ToolInfo {
 	return {
 		name,
 		description,
@@ -27,12 +31,21 @@ function createToolInfo(name: string, description = `${name} description`, param
 	};
 }
 
-function createBuiltinToolInfo(name: string, description = `${name} description`, parameters = Type.Object({})): ToolInfo {
+function createBuiltinToolInfo(
+	name: string,
+	description = `${name} description`,
+	parameters = Type.Object({}),
+): ToolInfo {
 	return {
 		name,
 		description,
 		parameters,
-		sourceInfo: { source: "builtin", path: `<builtin:${name}>`, scope: "temporary", origin: "top-level" },
+		sourceInfo: {
+			source: "builtin",
+			path: `<builtin:${name}>`,
+			scope: "temporary",
+			origin: "top-level",
+		},
 	};
 }
 
@@ -128,18 +141,38 @@ describe("cursor pi tool bridge flags and snapshots", () => {
 		expect(resolveCursorPiToolBridgeEnabled({ PI_CURSOR_PI_TOOL_BRIDGE: "true" })).toBe(true);
 
 		expect(resolveCursorPiToolBridgeBuiltinsEnabled({})).toBe(false);
-		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "0" })).toBe(false);
-		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "off" })).toBe(false);
-		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "unexpected" })).toBe(false);
-		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "1" })).toBe(true);
-		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "true" })).toBe(true);
+		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "0" })).toBe(
+			false,
+		);
+		expect(
+			resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "off" }),
+		).toBe(false);
+		expect(
+			resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "unexpected" }),
+		).toBe(false);
+		expect(resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "1" })).toBe(
+			true,
+		);
+		expect(
+			resolveCursorPiToolBridgeBuiltinsEnabled({ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "true" }),
+		).toBe(true);
 
 		expect(resolveCursorPiToolBridgeDebugEnabled({})).toBe(false);
-		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "false" })).toBe(false);
-		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "0" })).toBe(false);
-		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "unexpected" })).toBe(false);
-		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "1" })).toBe(true);
-		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "true" })).toBe(true);
+		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "false" })).toBe(
+			false,
+		);
+		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "0" })).toBe(
+			false,
+		);
+		expect(
+			resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "unexpected" }),
+		).toBe(false);
+		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "1" })).toBe(
+			true,
+		);
+		expect(resolveCursorPiToolBridgeDebugEnabled({ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "true" })).toBe(
+			true,
+		);
 	});
 
 	it("maps only active pi tools, includes dynamic tools, and excludes only registered internal Cursor replay names", () => {
@@ -154,12 +187,25 @@ describe("cursor pi tool bridge flags and snapshots", () => {
 			createToolInfo("cursor_mcp"),
 		];
 		const pi = createMockPi({
-			active: ["custom_read", "sem_reindex", "inactive_missing", "cursor", "cursor_edit", "cursor_mcp"],
+			active: [
+				"custom_read",
+				"sem_reindex",
+				"inactive_missing",
+				"cursor",
+				"cursor_edit",
+				"cursor_mcp",
+			],
 			tools,
 		});
 
 		const externalSnapshot = buildCursorPiToolBridgeSnapshot(pi);
-		expect(externalSnapshot.tools.map((tool) => tool.piToolName)).toEqual(["custom_read", "sem_reindex", "cursor", "cursor_edit", "cursor_mcp"]);
+		expect(externalSnapshot.tools.map((tool) => tool.piToolName)).toEqual([
+			"custom_read",
+			"sem_reindex",
+			"cursor",
+			"cursor_edit",
+			"cursor_mcp",
+		]);
 
 		nativeToolDisplayTestUtils.registerNativeToolNameForTests("cursor");
 		nativeToolDisplayTestUtils.registerNativeToolNameForTests("cursor_edit");
@@ -167,7 +213,10 @@ describe("cursor pi tool bridge flags and snapshots", () => {
 		const snapshot = buildCursorPiToolBridgeSnapshot(pi);
 
 		expect(snapshot.tools.map((tool) => tool.piToolName)).toEqual(["custom_read", "sem_reindex"]);
-		expect(snapshot.tools.map((tool) => tool.mcpToolName)).toEqual(["pi__custom_read", "pi__sem_reindex"]);
+		expect(snapshot.tools.map((tool) => tool.mcpToolName)).toEqual([
+			"pi__custom_read",
+			"pi__sem_reindex",
+		]);
 		expect(snapshot.mcpToolNameToPiToolName.get("pi__custom_read")).toBe("custom_read");
 		expect(snapshot.piToolNameToMcpToolName.get("sem_reindex")).toBe("pi__sem_reindex");
 		expect(snapshot.tools[0].description).toBe("Custom read files");
@@ -195,7 +244,10 @@ describe("cursor pi tool bridge flags and snapshots", () => {
 
 		const defaultSnapshot = buildCursorPiToolBridgeSnapshot(pi);
 		expect(defaultSnapshot.tools.map((tool) => tool.piToolName)).toEqual(["todo", "sem_reindex"]);
-		expect(defaultSnapshot.tools.map((tool) => tool.mcpToolName)).toEqual(["pi__todo", "pi__sem_reindex"]);
+		expect(defaultSnapshot.tools.map((tool) => tool.mcpToolName)).toEqual([
+			"pi__todo",
+			"pi__sem_reindex",
+		]);
 
 		const optInSnapshot = buildCursorPiToolBridgeSnapshot(pi, {
 			exposeOverlappingBuiltins: true,
@@ -240,7 +292,10 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 
 	it("uses endpoint-independent request IDs so historical tool results cannot resolve a new run", async () => {
 		const registry = __testUtils.createRegistry(
-			createMockPi({ active: ["read"], tools: [createToolInfo("read", "Read files", Type.Object({ path: Type.String() }))] }),
+			createMockPi({
+				active: ["read"],
+				tools: [createToolInfo("read", "Read files", Type.Object({ path: Type.String() }))],
+			}),
 			{ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "1" },
 		);
 		const run = await registry.createRun();
@@ -286,7 +341,9 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 					},
 				],
 			});
-			await expect(callPromise).resolves.toMatchObject({ content: [{ type: "text", text: "current result" }] });
+			await expect(callPromise).resolves.toMatchObject({
+				content: [{ type: "text", text: "current result" }],
+			});
 		} finally {
 			await client.close().catch(() => undefined);
 			await transport.close().catch(() => undefined);
@@ -401,7 +458,9 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 
 			const records = diagnostics.records();
 			const skipped = records.find((record) => record.event === "run_skipped");
-			const created = records.find((record) => record.event === "run_created" && record.enabled === true);
+			const created = records.find(
+				(record) => record.event === "run_created" && record.enabled === true,
+			);
 			const exposed = records.find((record) => record.event === "tools_exposed");
 			const disposed = records.filter((record) => record.event === "run_disposed");
 
@@ -413,7 +472,11 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 				pairs: [{ piToolName: "read", mcpToolName: "pi__read" }],
 			});
 			expect(disposed).toHaveLength(2);
-			expect(disposed.at(-1)).toMatchObject({ enabled: true, exposedToolCount: 1, pendingCount: 0 });
+			expect(disposed.at(-1)).toMatchObject({
+				enabled: true,
+				exposedToolCount: 1,
+				pendingCount: 0,
+			});
 			const serialized = JSON.stringify(records);
 			expect(serialized).not.toContain(endpointToken);
 			expect(serialized).not.toContain(endpointPath);
@@ -429,7 +492,10 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 	it("emits scrubbed request diagnostics for queue, resolution, cancellation, and rejection", async () => {
 		const diagnostics = collectBridgeDiagnosticOutput();
 		const registry = __testUtils.createRegistry(
-			createMockPi({ active: ["read"], tools: [createToolInfo("read", "Read files", Type.Object({ path: Type.String() }))] }),
+			createMockPi({
+				active: ["read"],
+				tools: [createToolInfo("read", "Read files", Type.Object({ path: Type.String() }))],
+			}),
 			{ PI_CURSOR_PI_TOOL_BRIDGE_DEBUG: "1", PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "1" },
 		);
 		const run = await registry.createRun();
@@ -468,10 +534,12 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 				content: [{ type: "text", text: "raw result with bearer token and file contents" }],
 			});
 
-			const rejectedCallPromise = client.callTool({
-				name: "pi__read",
-				arguments: { path: "/cancelled/secret.txt", token: "secret-token" },
-			}).catch((error: unknown) => error);
+			const rejectedCallPromise = client
+				.callTool({
+					name: "pi__read",
+					arguments: { path: "/cancelled/secret.txt", token: "secret-token" },
+				})
+				.catch((error: unknown) => error);
 			await waitForQueuedRequests(run);
 			run.cancel("secret cancellation reason with Bearer secret-token");
 			const rejectedError = await rejectedCallPromise;
@@ -500,7 +568,11 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 				pendingCount: 0,
 				isError: false,
 			});
-			expect(cancelled).toMatchObject({ pendingCount: 1, queuedCount: 0, cancelledRequestCount: 1 });
+			expect(cancelled).toMatchObject({
+				pendingCount: 1,
+				queuedCount: 0,
+				cancelledRequestCount: 1,
+			});
 			expect(rejected).toMatchObject({
 				mcpToolName: "pi__read",
 				piToolName: "read",
@@ -554,12 +626,24 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 			const listed = await client.listTools();
 			expect(listed.tools.map((tool) => tool.name)).toEqual(["pi__read"]);
 			expect(listed.tools[0].description).toContain("Read files");
-			expect(listed.tools[0].description).toContain("pi__* names are live Cursor MCP bridge tool names only when exposed in the current run");
-			expect(listed.tools[0].description).toContain("Call the pi__* MCP tool name, not the real pi tool name shown in pi history or transcripts");
-			expect(listed.tools[0].description).toContain("Bridged calls execute through normal pi tool flow");
-			expect(listed.tools[0].description).toContain("Replay IDs, replay labels, and transcript tool names are display-only/context-only");
-			expect(listed.tools[0].description).toContain("Cursor-native host tools, settings, plugins, and configured MCP servers are separate from the pi bridge");
-			expect(listed.tools[0].description).toContain("This run exposes real pi tool read as Cursor MCP tool pi__read.");
+			expect(listed.tools[0].description).toContain(
+				"pi__* names are live Cursor MCP bridge tool names only when exposed in the current run",
+			);
+			expect(listed.tools[0].description).toContain(
+				"Call the pi__* MCP tool name, not the real pi tool name shown in pi history or transcripts",
+			);
+			expect(listed.tools[0].description).toContain(
+				"Bridged calls execute through normal pi tool flow",
+			);
+			expect(listed.tools[0].description).toContain(
+				"Replay IDs, replay labels, and transcript tool names are display-only/context-only",
+			);
+			expect(listed.tools[0].description).toContain(
+				"Cursor-native host tools, settings, plugins, and configured MCP servers are separate from the pi bridge",
+			);
+			expect(listed.tools[0].description).toContain(
+				"This run exposes real pi tool read as Cursor MCP tool pi__read.",
+			);
 		} finally {
 			await client.close();
 			await transport.close();
@@ -572,7 +656,10 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 
 	it("queues MCP calls, maps them back to real pi tool names, and resolves from pi tool results", async () => {
 		const registry = __testUtils.createRegistry(
-			createMockPi({ active: ["read"], tools: [createToolInfo("read", "Read files", Type.Object({ path: Type.String() }))] }),
+			createMockPi({
+				active: ["read"],
+				tools: [createToolInfo("read", "Read files", Type.Object({ path: Type.String() }))],
+			}),
 			{ PI_CURSOR_EXPOSE_BUILTIN_TOOLS: "1" },
 		);
 		const run = await registry.createRun();
@@ -588,13 +675,31 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 			expect(run.isBridgeMcpToolCall({ name: "pi__read" })).toBe(true);
 			expect(run.isBridgeMcpToolCall({ name: "mcp", args: { toolName: "pi__read" } })).toBe(true);
 			expect(run.isBridgeMcpToolCall({ name: "mcp", args: [{ toolName: "pi__read" }] })).toBe(true);
-			expect(run.isBridgeMcpToolCall({ name: "pi_tools", args: { toolName: "pi__read" } })).toBe(true);
-			expect(run.isBridgeMcpToolCall({ name: "mcp", arguments: { mcpToolName: "pi__read" } })).toBe(true);
-			expect(run.isBridgeMcpToolCall({ name: "mcp", args: { toolName: "other_tool" } })).toBe(false);
-			expect(run.isBridgeMcpToolCall({ name: "mcp", result: { toolName: "pi__read" } })).toBe(false);
-			expect(run.isBridgeMcpToolCall({ name: "mcp", value: "pi__read", details: { toolName: "pi__read" } })).toBe(false);
-			expect(run.isBridgeMcpToolCall({ name: "mcp", result: { text: "mentions pi__read here" } })).toBe(false);
-			expect(run.isBridgeMcpToolCall({ name: "external_search", id: request.cursorMcpCallId })).toBe(false);
+			expect(run.isBridgeMcpToolCall({ name: "pi_tools", args: { toolName: "pi__read" } })).toBe(
+				true,
+			);
+			expect(run.isBridgeMcpToolCall({ name: "mcp", arguments: { mcpToolName: "pi__read" } })).toBe(
+				true,
+			);
+			expect(run.isBridgeMcpToolCall({ name: "mcp", args: { toolName: "other_tool" } })).toBe(
+				false,
+			);
+			expect(run.isBridgeMcpToolCall({ name: "mcp", result: { toolName: "pi__read" } })).toBe(
+				false,
+			);
+			expect(
+				run.isBridgeMcpToolCall({
+					name: "mcp",
+					value: "pi__read",
+					details: { toolName: "pi__read" },
+				}),
+			).toBe(false);
+			expect(
+				run.isBridgeMcpToolCall({ name: "mcp", result: { text: "mentions pi__read here" } }),
+			).toBe(false);
+			expect(
+				run.isBridgeMcpToolCall({ name: "external_search", id: request.cursorMcpCallId }),
+			).toBe(false);
 			expect(run.isBridgeMcpToolCall({ name: "mcp", id: request.cursorMcpCallId })).toBe(true);
 
 			const context: Context = {
@@ -623,13 +728,24 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 	});
 
 	it("aborts active bridged pi tool execution on process interrupt", async () => {
-		const toolCallHandlers: Array<(
-			event: { toolCallId: string; toolName: string; input: Record<string, unknown> },
-			ctx: { signal?: AbortSignal; abort: () => void },
-		) => unknown> = [];
+		const toolCallHandlers: Array<
+			(
+				event: { toolCallId: string; toolName: string; input: Record<string, unknown> },
+				ctx: { signal?: AbortSignal; abort: () => void },
+			) => unknown
+		> = [];
 		const toolResultHandlers: Array<(event: { toolCallId: string }) => unknown> = [];
 		const pi = {
-			...createMockPi({ active: ["bash"], tools: [createBuiltinToolInfo("bash", "Run shell commands", Type.Object({ command: Type.String() }))] }),
+			...createMockPi({
+				active: ["bash"],
+				tools: [
+					createBuiltinToolInfo(
+						"bash",
+						"Run shell commands",
+						Type.Object({ command: Type.String() }),
+					),
+				],
+			}),
 			on: vi.fn((event: string, handler: unknown) => {
 				if (event === "tool_call") {
 					toolCallHandlers.push(handler as (typeof toolCallHandlers)[number]);
@@ -651,14 +767,17 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 			const agentAbort = vi.fn();
 			const abortController = new AbortController();
 
-			const hookResult = toolCallHandlers[0]!({
-				toolCallId: request.piToolCallId,
-				toolName: "bash",
-				input: request.args,
-			}, {
-				signal: abortController.signal,
-				abort: agentAbort,
-			});
+			const hookResult = toolCallHandlers[0]!(
+				{
+					toolCallId: request.piToolCallId,
+					toolName: "bash",
+					input: request.args,
+				},
+				{
+					signal: abortController.signal,
+					abort: agentAbort,
+				},
+			);
 			expect(hookResult).toBeUndefined();
 			expect(__testUtils.getActiveBridgeToolExecutionAbortCount()).toBe(1);
 			expect(process.listenerCount("SIGINT")).toBe(sigintListenerCount + 1);
@@ -684,13 +803,24 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 	});
 
 	it("cleans active bridged pi tool execution on session shutdown without a tool result", async () => {
-		const toolCallHandlers: Array<(
-			event: { toolCallId: string; toolName: string; input: Record<string, unknown> },
-			ctx: { signal?: AbortSignal; abort: () => void },
-		) => unknown> = [];
+		const toolCallHandlers: Array<
+			(
+				event: { toolCallId: string; toolName: string; input: Record<string, unknown> },
+				ctx: { signal?: AbortSignal; abort: () => void },
+			) => unknown
+		> = [];
 		const sessionShutdownHandlers: Array<(event: { reason: "new" }) => Promise<void> | void> = [];
 		const pi = {
-			...createMockPi({ active: ["bash"], tools: [createBuiltinToolInfo("bash", "Run shell commands", Type.Object({ command: Type.String() }))] }),
+			...createMockPi({
+				active: ["bash"],
+				tools: [
+					createBuiltinToolInfo(
+						"bash",
+						"Run shell commands",
+						Type.Object({ command: Type.String() }),
+					),
+				],
+			}),
 			on: vi.fn((event: string, handler: unknown) => {
 				if (event === "tool_call") {
 					toolCallHandlers.push(handler as (typeof toolCallHandlers)[number]);
@@ -710,14 +840,17 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 			const agentAbort = vi.fn();
 			const abortController = new AbortController();
 
-			toolCallHandlers[0]!({
-				toolCallId: request.piToolCallId,
-				toolName: "bash",
-				input: request.args,
-			}, {
-				signal: abortController.signal,
-				abort: agentAbort,
-			});
+			toolCallHandlers[0]!(
+				{
+					toolCallId: request.piToolCallId,
+					toolName: "bash",
+					input: request.args,
+				},
+				{
+					signal: abortController.signal,
+					abort: agentAbort,
+				},
+			);
 			expect(__testUtils.getActiveBridgeToolExecutionAbortCount()).toBe(1);
 
 			await sessionShutdownHandlers[0]!({ reason: "new" });
@@ -734,14 +867,26 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 	});
 
 	it("contains bridged pi tool abort callback failures during interrupt cleanup", async () => {
-		const toolCallHandlers: Array<(
-			event: { toolCallId: string; toolName: string; input: Record<string, unknown> },
-			ctx: { signal?: AbortSignal; abort: () => void },
-		) => unknown> = [];
+		const toolCallHandlers: Array<
+			(
+				event: { toolCallId: string; toolName: string; input: Record<string, unknown> },
+				ctx: { signal?: AbortSignal; abort: () => void },
+			) => unknown
+		> = [];
 		const pi = {
-			...createMockPi({ active: ["bash"], tools: [createBuiltinToolInfo("bash", "Run shell commands", Type.Object({ command: Type.String() }))] }),
+			...createMockPi({
+				active: ["bash"],
+				tools: [
+					createBuiltinToolInfo(
+						"bash",
+						"Run shell commands",
+						Type.Object({ command: Type.String() }),
+					),
+				],
+			}),
 			on: vi.fn((event: string, handler: unknown) => {
-				if (event === "tool_call") toolCallHandlers.push(handler as (typeof toolCallHandlers)[number]);
+				if (event === "tool_call")
+					toolCallHandlers.push(handler as (typeof toolCallHandlers)[number]);
 			}),
 		};
 		process.env.PI_CURSOR_EXPOSE_BUILTIN_TOOLS = "1";
@@ -753,18 +898,23 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 			const observedCallError = callPromise.catch((error: unknown) => error);
 			const [request] = await waitForQueuedRequests(run);
 
-			toolCallHandlers[0]!({
-				toolCallId: request.piToolCallId,
-				toolName: "bash",
-				input: request.args,
-			}, {
-				signal: new AbortController().signal,
-				abort: () => {
-					throw new Error("abort failed");
+			toolCallHandlers[0]!(
+				{
+					toolCallId: request.piToolCallId,
+					toolName: "bash",
+					input: request.args,
 				},
-			});
+				{
+					signal: new AbortController().signal,
+					abort: () => {
+						throw new Error("abort failed");
+					},
+				},
+			);
 
-			expect(() => __testUtils.emitBridgeToolExecutionProcessAbortSignalForTests("SIGINT")).not.toThrow();
+			expect(() =>
+				__testUtils.emitBridgeToolExecutionProcessAbortSignalForTests("SIGINT"),
+			).not.toThrow();
 			expect(__testUtils.getActiveBridgeToolExecutionAbortCount()).toBe(0);
 			const error = await observedCallError;
 			expect(error).toBeInstanceOf(Error);
@@ -817,13 +967,19 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 		});
 		const { client, transport } = await connectClient(run.mcpServers!.pi_tools.url);
 		try {
-			const error = await client.callTool({ name: "pi__read", arguments: { path: "README.md" } }).catch((callError: unknown) => callError);
+			const error = await client
+				.callTool({ name: "pi__read", arguments: { path: "README.md" } })
+				.catch((callError: unknown) => callError);
 			const queued = diagnostics.records().find((record) => record.event === "request_queued");
 			const rejected = diagnostics.records().find((record) => record.event === "request_rejected");
 
 			expect(error).toBeInstanceOf(Error);
 			expect(queued?.piToolCallId).toEqual(expect.any(String));
-			expect(rejected).toMatchObject({ piToolCallId: queued?.piToolCallId, pendingCount: 0, rejectionKind: "error" });
+			expect(rejected).toMatchObject({
+				piToolCallId: queued?.piToolCallId,
+				pendingCount: 0,
+				rejectionKind: "error",
+			});
 			expect(run.hasPendingPiToolCallId(queued?.piToolCallId as string)).toBe(false);
 		} finally {
 			await client.close().catch(() => undefined);
@@ -842,8 +998,14 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 		const run = await registry.createRun();
 		const { client, transport } = await connectClient(run.mcpServers!.pi_tools.url);
 		try {
-			const callPromise = client.callTool({ name: "pi__read", arguments: { path: "README.md" } }).catch((callError: unknown) => callError);
-			await vi.waitFor(() => expect(diagnostics.records().some((record) => record.event === "request_queued")).toBe(true));
+			const callPromise = client
+				.callTool({ name: "pi__read", arguments: { path: "README.md" } })
+				.catch((callError: unknown) => callError);
+			await vi.waitFor(() =>
+				expect(diagnostics.records().some((record) => record.event === "request_queued")).toBe(
+					true,
+				),
+			);
 			const queued = diagnostics.records().find((record) => record.event === "request_queued");
 
 			run.setOnToolRequest(() => {
@@ -854,7 +1016,11 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 			const rejected = diagnostics.records().find((record) => record.event === "request_rejected");
 			expect(error).toBeInstanceOf(Error);
 			expect(queued?.piToolCallId).toEqual(expect.any(String));
-			expect(rejected).toMatchObject({ piToolCallId: queued?.piToolCallId, pendingCount: 0, rejectionKind: "error" });
+			expect(rejected).toMatchObject({
+				piToolCallId: queued?.piToolCallId,
+				pendingCount: 0,
+				rejectionKind: "error",
+			});
 			expect(run.hasPendingPiToolCallId(queued?.piToolCallId as string)).toBe(false);
 		} finally {
 			await client.close().catch(() => undefined);
@@ -911,9 +1077,21 @@ describe("cursor pi tool bridge loopback MCP lifecycle", () => {
 	it("changes the bridge surface signature when tool schema changes but the MCP name stays the same", () => {
 		const schema = Type.Object({ target: Type.String() });
 		const schemaV2 = Type.Object({ target: Type.String(), force: Type.Optional(Type.Boolean()) });
-		const snapshotA = buildCursorPiToolBridgeSnapshot(createMockPi({ active: ["sem_reindex"], tools: [createToolInfo("sem_reindex", "Reindex", schema)] }));
-		const snapshotB = buildCursorPiToolBridgeSnapshot(createMockPi({ active: ["sem_reindex"], tools: [createToolInfo("sem_reindex", "Reindex", schemaV2)] }));
+		const snapshotA = buildCursorPiToolBridgeSnapshot(
+			createMockPi({
+				active: ["sem_reindex"],
+				tools: [createToolInfo("sem_reindex", "Reindex", schema)],
+			}),
+		);
+		const snapshotB = buildCursorPiToolBridgeSnapshot(
+			createMockPi({
+				active: ["sem_reindex"],
+				tools: [createToolInfo("sem_reindex", "Reindex", schemaV2)],
+			}),
+		);
 
-		expect(buildCursorPiToolBridgeSurfaceSignature(snapshotA)).not.toBe(buildCursorPiToolBridgeSurfaceSignature(snapshotB));
+		expect(buildCursorPiToolBridgeSurfaceSignature(snapshotA)).not.toBe(
+			buildCursorPiToolBridgeSurfaceSignature(snapshotB),
+		);
 	});
 });

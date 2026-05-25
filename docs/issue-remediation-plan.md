@@ -4,12 +4,12 @@ Captured 2026-05-23 from GitHub issues on `fitchmultz/pi-cursor-sdk`.
 
 ## Open issues inventory
 
-| Issue | Title | Severity | Status in this PR |
-|-------|-------|----------|-------------------|
-| #17 | Weird prints (ripgrep / ignore mapping SDK noise) | User-facing TUI corruption | Fixed |
-| #19 | Consolidate edit diff fallback | Maintainability | Fixed |
-| #20 | Stale pi 0.75.3 in investigation doc | Docs hygiene | Fixed |
-| #21 | Decompose 1k+ line modules | Structural debt | Fixed |
+| Issue | Title                                             | Severity                   | Status in this PR |
+| ----- | ------------------------------------------------- | -------------------------- | ----------------- |
+| #17   | Weird prints (ripgrep / ignore mapping SDK noise) | User-facing TUI corruption | Fixed             |
+| #19   | Consolidate edit diff fallback                    | Maintainability            | Fixed             |
+| #20   | Stale pi 0.75.3 in investigation doc              | Docs hygiene               | Fixed             |
+| #21   | Decompose 1k+ line modules                        | Structural debt            | Fixed             |
 
 Closed issues (#1, #2, #13, #15) were already remediated on `main`; no action required.
 
@@ -35,12 +35,12 @@ Closed issues (#1, #2, #13, #15) were already remediated on `main`; no action re
 
 Split by ownership boundary (behavior-preserving moves):
 
-| Before | After |
-|--------|-------|
-| `cursor-provider.ts` (~1276) | `cursor-provider.ts` (~369) + `cursor-provider-live-run-drain.ts` (~374) + `cursor-provider-turn-coordinator.ts` (~402) + `cursor-partial-content-emitter.ts` (~121) + `cursor-sdk-output-filter.ts` (~78) |
-| `cursor-tool-transcript.ts` (~1264) | orchestrator (~28) + `cursor-transcript-tool-specs.ts` (~441) + `cursor-transcript-utils.ts` + `cursor-transcript-tool-formatters.ts` + `cursor-sensitive-text.ts` |
-| `cursor-pi-tool-bridge.ts` (~1174) | main (~852) + `cursor-pi-tool-bridge-diagnostics.ts` + `cursor-pi-tool-bridge-mcp.ts` + `cursor-pi-tool-bridge-types.ts` + `cursor-record-utils.ts` |
-| `test/cursor-provider.test.ts` (~5151) | scenario-focused test files + `test/helpers/cursor-provider-harness.ts` (stream/bridge/replay splits, each ≤800 lines) |
+| Before                                 | After                                                                                                                                                                                                      |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cursor-provider.ts` (~1276)           | `cursor-provider.ts` (~369) + `cursor-provider-live-run-drain.ts` (~374) + `cursor-provider-turn-coordinator.ts` (~402) + `cursor-partial-content-emitter.ts` (~121) + `cursor-sdk-output-filter.ts` (~78) |
+| `cursor-tool-transcript.ts` (~1264)    | orchestrator (~28) + `cursor-transcript-tool-specs.ts` (~441) + `cursor-transcript-utils.ts` + `cursor-transcript-tool-formatters.ts` + `cursor-sensitive-text.ts`                                         |
+| `cursor-pi-tool-bridge.ts` (~1174)     | main (~852) + `cursor-pi-tool-bridge-diagnostics.ts` + `cursor-pi-tool-bridge-mcp.ts` + `cursor-pi-tool-bridge-types.ts` + `cursor-record-utils.ts`                                                        |
+| `test/cursor-provider.test.ts` (~5151) | scenario-focused test files + `test/helpers/cursor-provider-harness.ts` (stream/bridge/replay splits, each ≤800 lines)                                                                                     |
 
 ## Phase 2 completion
 

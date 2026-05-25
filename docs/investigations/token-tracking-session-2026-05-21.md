@@ -209,13 +209,13 @@ Recommended split under the current pi schema:
 
 #### Implementation options
 
-| Option | Summary | Pros | Risks / why not enough |
-| --- | --- | --- | --- |
-| A. Keep current behavior | Continue counting prompt once and text output only. | Matches current docs/tests; avoids raw SDK false compaction. | `/session` remains misleading for tool-heavy Cursor runs; context/compaction can undercount after split live runs. |
-| B. Copy Cursor SDK `turn-ended.usage` | Use SDK counters as pi usage. | Big numbers look closer to “Cursor did work.” | Reintroduces known false context-overflow/compaction bug; not pi-context, not per-turn, not proven billable. Reject. |
-| C. Delta Cursor SDK `turn-ended.usage` | Track per-run monotonic deltas and persist them. | Better diagnostic than raw cumulative counters. | Still internal/cache/tool work; ambiguous across split pi turns; unsafe for compaction. Use diagnostics only. |
+| Option                                                | Summary                                                                                                                                                                                                                                | Pros                                                                                                               | Risks / why not enough                                                                                                               |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| A. Keep current behavior                              | Continue counting prompt once and text output only.                                                                                                                                                                                    | Matches current docs/tests; avoids raw SDK false compaction.                                                       | `/session` remains misleading for tool-heavy Cursor runs; context/compaction can undercount after split live runs.                   |
+| B. Copy Cursor SDK `turn-ended.usage`                 | Use SDK counters as pi usage.                                                                                                                                                                                                          | Big numbers look closer to “Cursor did work.”                                                                      | Reintroduces known false context-overflow/compaction bug; not pi-context, not per-turn, not proven billable. Reject.                 |
+| C. Delta Cursor SDK `turn-ended.usage`                | Track per-run monotonic deltas and persist them.                                                                                                                                                                                       | Better diagnostic than raw cumulative counters.                                                                    | Still internal/cache/tool work; ambiguous across split pi turns; unsafe for compaction. Use diagnostics only.                        |
 | D. Improve extension pi estimates in existing `Usage` | Keep `input/output` as approximate session activity; set `usage.totalTokens` to context-safe `buildCursorPrompt()` estimate for context/compaction; count tool-call args/thinking in session output and tool results as deduped input. | Fixes immediate `/session` undercount and context undercount without raw SDK counters. Can be tested in this repo. | `usage.totalTokens` may differ from `input + output`; docs/tests must define this provider-specific contract. Recommended near-term. |
-| E. Pi core schema/UI split | Add explicit provider usage, context estimate, visible transcript estimate, and internal diagnostics in pi core `/session`. | Correct long-term contract; avoids overloading `AssistantMessage.usage`. | Requires upstream pi changes outside this extension. Recommended long-term. |
+| E. Pi core schema/UI split                            | Add explicit provider usage, context estimate, visible transcript estimate, and internal diagnostics in pi core `/session`.                                                                                                            | Correct long-term contract; avoids overloading `AssistantMessage.usage`.                                           | Requires upstream pi changes outside this extension. Recommended long-term.                                                          |
 
 #### Implemented extension fix path
 
@@ -274,11 +274,13 @@ There is a real accounting-contract gap. Current behavior matches docs/tests, bu
 ## Investigation Log
 
 ### Phase 1 - Initial Assessment
+
 **Hypothesis:** Token tracking may be incomplete because Cursor SDK usage is persisted as zeros for intermediate assistant/tool-turn events, while `/session` aggregates only persisted `message.usage` fields and/or ignores visible text/tool transcript content.
 
 **Findings:** The supplied JSONL exists outside the repo and is 778 KB with 87 records. A safe structural scan found many assistant records with zero-valued usage fields.
 
 **Evidence:**
+
 - Session JSONL path above.
 - Structural scan: 87 records; type counts: `session: 1`, `model_change: 1`, `thinking_level_change: 1`, `message: 84`.
 - User's `/session` output: 82 total visible messages/events, 3,405 total tokens.
@@ -286,15 +288,18 @@ There is a real accounting-contract gap. Current behavior matches docs/tests, bu
 **Conclusion:** Initial symptom confirmed: persisted usage exists but is often zero. Later phases traced this through provider usage emission and pi `/session` aggregation.
 
 ### Phase 4 - Oracle synthesis: proper fix path
+
 **Hypothesis:** There is a safe way to improve token tracking without restoring raw Cursor SDK cumulative usage.
 
 **Findings:** Oracle recommended a provider-side dual estimate now:
+
 - `usage.input`: incremental approximate session input, including the initial `Agent.send()` prompt once plus newly consumed tool-result text on split live-run continuations, deduped by `toolCallId`.
 - `usage.output`: approximate assistant-visible output for each pi assistant turn, including text, thinking, and tool-call name/args.
 - `usage.cacheRead/cacheWrite`: keep `0` unless Cursor SDK exposes a safe pi-compatible contract.
 - `usage.totalTokens`: context-safe current replayable Cursor prompt estimate derived from `buildCursorPrompt(context + partial)`, allowed to differ from `input + output` because pi compaction already treats `totalTokens` as authoritative context usage.
 
 **Evidence:**
+
 - `/session` ignores `usage.totalTokens` and sums components only: installed `interactive-mode.js:4289-4313` → `getSessionStats()`, installed `agent-session.js:2351-2387`.
 - Compaction/context estimation already prefers `usage.totalTokens`: installed `compaction.js:74-80`, `120-145`.
 - Provider's real replayable prompt format is centralized in `src/context.ts:88-107`, `190-218`; it includes assistant text/tool calls and tool results, omits thinking, and reserves latest user-image tokens.
@@ -306,6 +311,7 @@ There is a real accounting-contract gap. Current behavior matches docs/tests, bu
 `pi-cursor-sdk` correctly avoided copying raw Cursor SDK cumulative usage, but it collapsed several different accounting concepts into one narrow provider estimate.
 
 Concrete chain:
+
 1. The provider estimates usage in `setApproximateUsage()` with only prompt input plus text output, then sets `totalTokens = input + output` (`src/cursor-provider.ts:279-284`).
 2. Split live runs count the original Cursor prompt once via `takeCursorNativePromptInputTokens()` (`src/cursor-provider.ts:636-640`).
 3. Native replay and bridge tool-use turns add tool-call blocks, then call `setApproximateUsage(..., outputText)`; tool-call args are not counted as output, and later split turns commonly get `input: 0` (`src/cursor-provider.ts:643-695`).
@@ -334,6 +340,7 @@ This is a real accounting-contract gap. Current docs/tests explain the old behav
 8. **Long-term pi-core improvement:** split `/session` metrics into first-class fields: provider estimate, context estimate, visible transcript estimate, and Cursor/internal diagnostics. Also reconcile `/session` current-state scope with footer all-entry scope.
 
 Rejected alternatives:
+
 - Copy raw Cursor SDK `turn-ended.usage`: rejects because it reintroduces cumulative/internal/cache false-compaction behavior.
 - Delta Cursor SDK usage as primary usage: rejects because it remains internal and ambiguous across split pi turns; use diagnostics only.
 - Count full prompt input on every split turn: rejects because it double-counts one Cursor SDK run.

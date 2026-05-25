@@ -6,12 +6,12 @@ Boolean env vars accept `1`/`true`/`on`/`yes`/`enabled` and `0`/`false`/`off`/`n
 
 ## Slash commands
 
-| Command | Description |
-| --- | --- |
-| `/cursor-refresh-models` | Refresh live Cursor model catalog without restarting pi |
-| `/cursor-settings` | Toggle compact tool display (interactive TUI; reloads after change) |
-| `/login` | Pi-native auth; choose **Use an API key** → **Cursor** |
-| `/model` | Pi-native model picker |
+| Command                  | Description                                                         |
+| ------------------------ | ------------------------------------------------------------------- |
+| `/cursor-refresh-models` | Refresh live Cursor model catalog without restarting pi             |
+| `/cursor-settings`       | Toggle compact tool display (interactive TUI; reloads after change) |
+| `/login`                 | Pi-native auth; choose **Use an API key** → **Cursor**              |
+| `/model`                 | Pi-native model picker                                              |
 
 ## Auth
 
@@ -28,13 +28,13 @@ Do not store API keys in `~/.pi/agent/cursor-sdk.json`.
 
 Project overrides merge over agent defaults.
 
-| File | Scope |
-| --- | --- |
-| `~/.pi/agent/settings.json` | Global |
-| `.pi/settings.json` | Project-local |
+| File                        | Scope         |
+| --------------------------- | ------------- |
+| `~/.pi/agent/settings.json` | Global        |
+| `.pi/settings.json`         | Project-local |
 
-| Key | Type | Default | Description |
-| --- | --- | --- | --- |
+| Key                        | Type    | Default | Description                                                      |
+| -------------------------- | ------- | ------- | ---------------------------------------------------------------- |
 | `cursorCompactToolDisplay` | boolean | `false` | OpenCode-style one-line replay rows for Cursor SDK sessions only |
 
 Env `PI_CURSOR_COMPACT_TOOL_DISPLAY` overrides the setting for one session.
@@ -43,34 +43,34 @@ Env `PI_CURSOR_COMPACT_TOOL_DISPLAY` overrides the setting for one session.
 
 ### Bridge
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PI_CURSOR_PI_TOOL_BRIDGE` | `true` | Expose active pi tools to Cursor via loopback MCP (`pi__*` names) |
-| `PI_CURSOR_EXPOSE_BUILTIN_TOOLS` | `false` | Also bridge overlapping built-ins (`read`, `bash`, `write`, `edit`, `grep`, `find`, `ls`) |
-| `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` | `3600` | Cursor SDK MCP `callTool` timeout (SDK default is 60s) |
-| `PI_CURSOR_MCP_TOOL_TIMEOUT_MS` | — | Same timeout in milliseconds (overrides seconds when set) |
-| `PI_CURSOR_PI_TOOL_BRIDGE_DEBUG` | `false` | Scrubbed JSONL bridge diagnostics to stderr (`[pi-cursor-sdk:bridge]`) |
+| Variable                             | Default | Description                                                                               |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------- |
+| `PI_CURSOR_PI_TOOL_BRIDGE`           | `true`  | Expose active pi tools to Cursor via loopback MCP (`pi__*` names)                         |
+| `PI_CURSOR_EXPOSE_BUILTIN_TOOLS`     | `false` | Also bridge overlapping built-ins (`read`, `bash`, `write`, `edit`, `grep`, `find`, `ls`) |
+| `PI_CURSOR_MCP_TOOL_TIMEOUT_SECONDS` | `3600`  | Cursor SDK MCP `callTool` timeout (SDK default is 60s)                                    |
+| `PI_CURSOR_MCP_TOOL_TIMEOUT_MS`      | —       | Same timeout in milliseconds (overrides seconds when set)                                 |
+| `PI_CURSOR_PI_TOOL_BRIDGE_DEBUG`     | `false` | Scrubbed JSONL bridge diagnostics to stderr (`[pi-cursor-sdk:bridge]`)                    |
 
 ### Cursor settings & MCP
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PI_CURSOR_SETTING_SOURCES` | `all` | Comma-separated Cursor setting sources to load (`project`, `user`, `plugins`, …). Use `none`/`0`/`false` to disable ambient loading |
+| Variable                    | Default | Description                                                                                                                         |
+| --------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `PI_CURSOR_SETTING_SOURCES` | `all`   | Comma-separated Cursor setting sources to load (`project`, `user`, `plugins`, …). Use `none`/`0`/`false` to disable ambient loading |
 
 ### Native replay display
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PI_CURSOR_NATIVE_TOOL_DISPLAY` | `true` in interactive TTY | Native replay cards vs scrubbed activity transcripts |
-| `PI_CURSOR_REGISTER_NATIVE_TOOLS` | follows display | Registration-only opt-out (also disables replay at runtime) |
-| `PI_CURSOR_COMPACT_TOOL_DISPLAY` | from settings | One-line OpenCode-style rows for `read`, `grep`, `find`, `bash`, `edit`, `write`, `ls` replay |
+| Variable                          | Default                   | Description                                                                                   |
+| --------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------- |
+| `PI_CURSOR_NATIVE_TOOL_DISPLAY`   | `true` in interactive TTY | Native replay cards vs scrubbed activity transcripts                                          |
+| `PI_CURSOR_REGISTER_NATIVE_TOOLS` | follows display           | Registration-only opt-out (also disables replay at runtime)                                   |
+| `PI_CURSOR_COMPACT_TOOL_DISPLAY`  | from settings             | One-line OpenCode-style rows for `read`, `grep`, `find`, `bash`, `edit`, `write`, `ls` replay |
 
 ### Task UI
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PI_CURSOR_TASK_WIDGET` | `true` | In-progress Cursor `task` widget in TUI |
-| `PI_CURSOR_TASK_DISPLAY` | `true` | Task activity in replay/display paths |
+| Variable                 | Default | Description                             |
+| ------------------------ | ------- | --------------------------------------- |
+| `PI_CURSOR_TASK_WIDGET`  | `true`  | In-progress Cursor `task` widget in TUI |
+| `PI_CURSOR_TASK_DISPLAY` | `true`  | Task activity in replay/display paths   |
 
 ## Model IDs
 
@@ -84,13 +84,13 @@ pi --model cursor/gpt-5.5@272k:xhigh
 pi --model cursor/claude-opus-4-7@300k --thinking high
 ```
 
-| Pattern | Meaning |
-| --- | --- |
-| `cursor/<id>` | Base model |
-| `cursor/<id>-fast` | Fast variant when SDK exposes `fast` |
-| `cursor/<id>@<context>` | Context-window variant (`@1m`, `@272k`, …) |
-| `:medium`, `:high`, `:xhigh` | Thinking suffix on model ID |
-| `--thinking <level>` | Pi thinking control (alternative to suffix) |
+| Pattern                      | Meaning                                     |
+| ---------------------------- | ------------------------------------------- |
+| `cursor/<id>`                | Base model                                  |
+| `cursor/<id>-fast`           | Fast variant when SDK exposes `fast`        |
+| `cursor/<id>@<context>`      | Context-window variant (`@1m`, `@272k`, …)  |
+| `:medium`, `:high`, `:xhigh` | Thinking suffix on model ID                 |
+| `--thinking <level>`         | Pi thinking control (alternative to suffix) |
 
 Fast mode is a model variant, not extension state. Older `/cursor-fast` and `--cursor-fast` flags are removed—select a `-fast` model instead.
 

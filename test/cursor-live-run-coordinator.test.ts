@@ -5,9 +5,9 @@ import {
 	createCursorLiveRunCoordinator,
 	hasTrailingUserMessagesAfterToolResults,
 	type CursorLiveRun,
-} from "../src/cursor-live-run-coordinator.js";
-import type { CursorNativeToolDisplayItem } from "../src/cursor-native-tool-display.js";
-import type { CursorPiToolBridgeRun } from "../src/cursor-pi-tool-bridge.js";
+} from "../src/provider/cursor-live-run-coordinator.js";
+import type { CursorNativeToolDisplayItem } from "../src/replay/cursor-native-tool-display.js";
+import type { CursorPiToolBridgeRun } from "../src/bridge/cursor-pi-tool-bridge.js";
 
 function makeContext(messages: Context["messages"]): Context {
 	return { systemPrompt: "Be helpful.", messages };
@@ -56,7 +56,15 @@ function makeCoordinator(options: { scopeKey?: string; idleDisposeMs?: number } 
 	return { coordinator, deleteNativeToolDisplay, abandonSessionAgent };
 }
 
-function startRun(coordinator: ReturnType<typeof makeCoordinator>["coordinator"], options: { id?: string; scopeKey?: string; bridgeRun?: CursorPiToolBridgeRun; sessionBridgeRun?: CursorPiToolBridgeRun } = {}): CursorLiveRun {
+function startRun(
+	coordinator: ReturnType<typeof makeCoordinator>["coordinator"],
+	options: {
+		id?: string;
+		scopeKey?: string;
+		bridgeRun?: CursorPiToolBridgeRun;
+		sessionBridgeRun?: CursorPiToolBridgeRun;
+	} = {},
+): CursorLiveRun {
 	return coordinator.start({
 		id: options.id ?? "cursor-replay-1",
 		agent: makeAgent(),
@@ -81,7 +89,14 @@ describe("cursor live run coordinator", () => {
 		const run = startRun(coordinator, { id: "cursor-replay-1" });
 		const context = makeContext([
 			{ role: "user", content: "run a tool", timestamp: 1 },
-			{ role: "toolResult", toolCallId: "cursor-replay-1-tool-1", toolName: "read", content: [], isError: false, timestamp: 2 },
+			{
+				role: "toolResult",
+				toolCallId: "cursor-replay-1-tool-1",
+				toolName: "read",
+				content: [],
+				isError: false,
+				timestamp: 2,
+			},
 			{ role: "user", content: "and summarize it", timestamp: 3 },
 		]);
 
@@ -165,7 +180,9 @@ describe("cursor live run coordinator", () => {
 
 	it("releases successful runs idempotently without abandoning pooled session resources", async () => {
 		vi.useFakeTimers();
-		const { coordinator, deleteNativeToolDisplay, abandonSessionAgent } = makeCoordinator({ idleDisposeMs: 5 });
+		const { coordinator, deleteNativeToolDisplay, abandonSessionAgent } = makeCoordinator({
+			idleDisposeMs: 5,
+		});
 		const bridgeRun = makeBridgeRun("non-session-bridge");
 		const sessionBridgeRun = makeBridgeRun("session-bridge");
 		const run = startRun(coordinator, { bridgeRun, sessionBridgeRun });
@@ -196,7 +213,11 @@ describe("cursor live run coordinator", () => {
 	it("releases unsuccessful session-bridge runs idempotently and abandons the session agent", async () => {
 		const { coordinator, deleteNativeToolDisplay, abandonSessionAgent } = makeCoordinator();
 		const sessionBridgeRun = makeBridgeRun("session-bridge");
-		const run = startRun(coordinator, { bridgeRun: sessionBridgeRun, sessionBridgeRun, scopeKey: "scope-error" });
+		const run = startRun(coordinator, {
+			bridgeRun: sessionBridgeRun,
+			sessionBridgeRun,
+			scopeKey: "scope-error",
+		});
 		const sdkCancel = vi.fn().mockResolvedValue(undefined);
 		coordinator.attachSdkRun(run, { cancel: sdkCancel });
 		run.recordedToolDisplayIds.push("tool-1");
@@ -222,7 +243,14 @@ describe("cursor live run coordinator", () => {
 		const run = startRun(coordinator, { id: "bridge-1", bridgeRun });
 		const context = makeContext([
 			{ role: "user", content: "run bridge", timestamp: 1 },
-			{ role: "toolResult", toolCallId: "pi-call-1", toolName: "read", content: [], isError: false, timestamp: 2 },
+			{
+				role: "toolResult",
+				toolCallId: "pi-call-1",
+				toolName: "read",
+				content: [],
+				isError: false,
+				timestamp: 2,
+			},
 		]);
 
 		expect(coordinator.getPendingFromContext(context, replayIdFromToolCallId)).toBe(run);

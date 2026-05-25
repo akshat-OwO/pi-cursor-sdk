@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { resolveCursorEditDiff } from "../src/cursor-edit-diff.js";
+import { resolveCursorEditDiff } from "../src/replay/cursor-edit-diff.js";
 
 describe("resolveCursorEditDiff", () => {
 	it("prefers diffString over diff, unifiedDiff, and patch", () => {
-		expect(resolveCursorEditDiff({
-			diffString: "diff-string",
-			diff: "diff",
-			unifiedDiff: "unified",
-			patch: "patch",
-		})).toBe("diff-string");
+		expect(
+			resolveCursorEditDiff({
+				diffString: "diff-string",
+				diff: "diff",
+				unifiedDiff: "unified",
+				patch: "patch",
+			}),
+		).toBe("diff-string");
 	});
 
 	it("falls back through diff, unifiedDiff, and patch", () => {

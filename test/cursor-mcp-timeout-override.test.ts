@@ -8,15 +8,19 @@ import {
 	isCursorSdkMcpToolTimeoutStack,
 	resolveCursorMcpToolTimeoutMs,
 	restoreCursorMcpToolTimeoutOverrideForTests,
-} from "../src/cursor-mcp-timeout-override.js";
+} from "../src/provider/cursor-mcp-timeout-override.js";
 
 afterEach(() => {
 	restoreCursorMcpToolTimeoutOverrideForTests();
 	vi.useRealTimers();
 });
 
-function scheduleSyntheticCursorSdkMcpToolTimeout(callback: () => void): ReturnType<typeof setTimeout> {
-	const sdkUrl = pathToFileURL(join(process.cwd(), "node_modules/@cursor/sdk/dist/esm/index.js")).href;
+function scheduleSyntheticCursorSdkMcpToolTimeout(
+	callback: () => void,
+): ReturnType<typeof setTimeout> {
+	const sdkUrl = pathToFileURL(
+		join(process.cwd(), "node_modules/@cursor/sdk/dist/esm/index.js"),
+	).href;
 	const source = `
 return (() => {
 	class Protocol {
@@ -49,7 +53,9 @@ return (() => {
 })();
 //# sourceURL=${sdkUrl}
 `;
-	const run = new Function("callback", source) as (callback: () => void) => ReturnType<typeof setTimeout>;
+	const run = new Function("callback", source) as (
+		callback: () => void,
+	) => ReturnType<typeof setTimeout>;
 	return run(callback);
 }
 
@@ -76,13 +82,20 @@ describe("Cursor MCP timeout override", () => {
 
 		expect(isCursorSdkMcpToolTimeoutStack(stack)).toBe(true);
 		expect(isCursorSdkMcpToolTimeoutStack(stack.replace(/callTool/g, "listTools"))).toBe(false);
-		expect(isCursorSdkMcpToolTimeoutStack(stack.replace(/node_modules\/\@cursor\/sdk/g, "src"))).toBe(false);
+		expect(
+			isCursorSdkMcpToolTimeoutStack(stack.replace(/node_modules\/\@cursor\/sdk/g, "src")),
+		).toBe(false);
 	});
 
 	it("wires the override before Cursor session agent creation", () => {
-		const providerSource = readFileSync(join(process.cwd(), "src/cursor-provider.ts"), "utf8");
+		const providerSource = readFileSync(
+			join(process.cwd(), "src/provider/cursor-provider.ts"),
+			"utf8",
+		);
 		const installIndex = providerSource.indexOf("installCursorMcpToolTimeoutOverride();");
-		const acquireIndex = providerSource.indexOf("acquireSessionCursorAgent(sessionAgentAcquireParams)");
+		const acquireIndex = providerSource.indexOf(
+			"acquireSessionCursorAgent(sessionAgentAcquireParams)",
+		);
 
 		expect(providerSource).toContain(
 			'import { installCursorMcpToolTimeoutOverride } from "./cursor-mcp-timeout-override.js";',

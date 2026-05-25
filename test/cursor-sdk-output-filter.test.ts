@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CURSOR_SDK_STARTUP_NOISE_PATTERNS, installCursorSdkOutputFilter, isCursorSdkStartupNoise } from "../src/cursor-sdk-output-filter.js";
+import {
+	CURSOR_SDK_STARTUP_NOISE_PATTERNS,
+	installCursorSdkOutputFilter,
+	isCursorSdkStartupNoise,
+} from "../src/shared/cursor-sdk-output-filter.js";
 
 describe("isCursorSdkStartupNoise", () => {
 	it.each(CURSOR_SDK_STARTUP_NOISE_PATTERNS)("filters startup noise containing %j", (pattern) => {
@@ -16,13 +20,17 @@ describe("isCursorSdkStartupNoise", () => {
 
 	it("filters ignore-mapping initialization errors", () => {
 		expect(
-			isCursorSdkStartupNoise("Error initializing ignore mapping for /Users/dev/project: permission denied"),
+			isCursorSdkStartupNoise(
+				"Error initializing ignore mapping for /Users/dev/project: permission denied",
+			),
 		).toBe(true);
 	});
 
 	it("filters ripgrep path configuration warnings", () => {
 		expect(
-			isCursorSdkStartupNoise("Ripgrep path not configured. Call configureRipgrepPath() at startup."),
+			isCursorSdkStartupNoise(
+				"Ripgrep path not configured. Call configureRipgrepPath() at startup.",
+			),
 		).toBe(true);
 	});
 

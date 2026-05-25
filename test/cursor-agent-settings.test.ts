@@ -16,8 +16,8 @@ import {
 	__cursorAgentSettingsTestUtils,
 	getCursorCompactToolDisplaySetting,
 	setCursorCompactToolDisplaySetting,
-} from "../src/cursor-agent-settings.js";
-import { isCursorCompactToolDisplayRequested } from "../src/cursor-native-tool-display-state.js";
+} from "../src/settings/cursor-agent-settings.js";
+import { isCursorCompactToolDisplayRequested } from "../src/replay/cursor-native-tool-display-state.js";
 
 const mockedGetAgentDir = vi.mocked(getAgentDir);
 
@@ -65,10 +65,7 @@ describe("cursor-agent-settings", () => {
 	it("writes cursorCompactToolDisplay to agent settings.json", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "pi-cursor-settings-"));
 		mockedGetAgentDir.mockReturnValue(tempDir);
-		writeFileSync(
-			join(tempDir, "settings.json"),
-			JSON.stringify({ defaultProvider: "cursor" }),
-		);
+		writeFileSync(join(tempDir, "settings.json"), JSON.stringify({ defaultProvider: "cursor" }));
 
 		setCursorCompactToolDisplaySetting(true, tempDir, tempDir);
 

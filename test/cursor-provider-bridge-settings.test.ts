@@ -29,22 +29,23 @@ import {
 	type CursorStepHandler,
 	type RegisteredTool,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
-import { estimateCursorPromptMessageTokens } from "../src/context.js";
-import { __testUtils as sessionAgentTestUtils } from "../src/cursor-session-agent.js";
-import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/cursor-pi-tool-bridge.js";
-import { __testUtils as nativeToolDisplayTestUtils } from "../src/cursor-native-tool-display.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
+import { estimateCursorPromptMessageTokens } from "../src/context/context.js";
+import { __testUtils as sessionAgentTestUtils } from "../src/session/cursor-session-agent.js";
+import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/bridge/cursor-pi-tool-bridge.js";
+import { __testUtils as nativeToolDisplayTestUtils } from "../src/replay/cursor-native-tool-display.js";
 import type { Context } from "@earendil-works/pi-ai";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-
-
 describe("streamCursor bridge settings", () => {
 	beforeEach(resetCursorProviderTestState);
 
-it("loads all Cursor setting sources by default for ambient MCP/tools", async () => {
+	it("loads all Cursor setting sources by default for ambient MCP/tools", async () => {
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
 			agentId: "agent-1",
@@ -155,10 +156,18 @@ it("loads all Cursor setting sources by default for ambient MCP/tools", async ()
 					'[hooks] SessionStart trigger matcher "startup" is not supported in Cursor, hooks will fire for all triggers',
 				);
 				console.warn('[hooks] Tool "Glob" is not supported in Cursor and will be ignored');
-				process.stdout.write('18:05:57.959 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "clone"}\n');
-				process.stderr.write('18:05:57.961 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "cursor"}\n');
-				console.log('18:05:57.962 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "cursor-sdk"}');
-				process.stderr.write("Error initializing ignore mapping for /tmp/project: permission denied\n");
+				process.stdout.write(
+					'18:05:57.959 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "clone"}\n',
+				);
+				process.stderr.write(
+					'18:05:57.961 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "cursor"}\n',
+				);
+				console.log(
+					'18:05:57.962 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "cursor-sdk"}',
+				);
+				process.stderr.write(
+					"Error initializing ignore mapping for /tmp/project: permission denied\n",
+				);
 				console.warn("Ripgrep path not configured. Call configureRipgrepPath() at startup.");
 				return {
 					id: "run-1",
@@ -184,7 +193,9 @@ it("loads all Cursor setting sources by default for ambient MCP/tools", async ()
 				};
 			});
 
-			await collectEvents(streamCursor(makeModel("composer-2"), makeContext(), { apiKey: "test-key" }));
+			await collectEvents(
+				streamCursor(makeModel("composer-2"), makeContext(), { apiKey: "test-key" }),
+			);
 		} finally {
 			process.stdout.write = originalStdoutWrite;
 			process.stderr.write = originalStderrWrite;
@@ -207,12 +218,16 @@ it("loads all Cursor setting sources by default for ambient MCP/tools", async ()
 		expect(stderrChunks.join("")).toContain("VISIBLE non-startup stderr");
 		expect(consoleSpy).not.toHaveBeenCalledWith("INFO managed_skills.removed via console");
 		expect(consoleSpy).not.toHaveBeenCalledWith("UNEXPECTED startup console with test-key");
-		expect(consoleSpy).not.toHaveBeenCalledWith('18:05:57.962 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "cursor-sdk"}');
+		expect(consoleSpy).not.toHaveBeenCalledWith(
+			'18:05:57.962 INFO  managed_skills.removed ctx=syncBuiltinSkills meta={skill_id: "cursor-sdk"}',
+		);
 		expect(consoleSpy).toHaveBeenCalledWith("VISIBLE non-startup console");
 		expect(consoleWarnSpy).not.toHaveBeenCalledWith(
 			'[hooks] SessionStart trigger matcher "startup" is not supported in Cursor, hooks will fire for all triggers',
 		);
-		expect(consoleWarnSpy).not.toHaveBeenCalledWith('[hooks] Tool "Glob" is not supported in Cursor and will be ignored');
+		expect(consoleWarnSpy).not.toHaveBeenCalledWith(
+			'[hooks] Tool "Glob" is not supported in Cursor and will be ignored',
+		);
 		consoleSpy.mockRestore();
 		consoleWarnSpy.mockRestore();
 	});

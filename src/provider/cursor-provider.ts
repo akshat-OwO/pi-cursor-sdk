@@ -1,0 +1,423 @@
+import {
+	type Api,
+	type AssistantMessageEventStream,
+	type Context,
+	createAssistantMessageEventStream,
+	type Model,
+	type SimpleStreamOptions,
+	type AssistantMessage,
+} from "@earendil-works/pi-ai";
+import { Agent, createAgentPlatform } from "@cursor/sdk";
+import type { SDKAgent, SettingSource } from "@cursor/sdk";
+import { installCursorMcpToolTimeoutOverride } from "./cursor-mcp-timeout-override.js";
+import {
+	installCursorSdkOutputFilter,
+	suppressCursorSdkOutput,
+} from "../shared/cursor-sdk-output-filter.js";
+import { buildCursorSendPrompt } from "../context/context.js";
+import {
+	acquireSessionCursorAgent,
+	commitSessionAgentSend,
+	disposeAllSessionCursorAgents,
+	resetSessionCursorAgent,
+} from "../session/cursor-session-agent.js";
+import {
+	type CursorPiBridgeToolRequest,
+	type CursorPiToolBridgeRun,
+} from "../bridge/cursor-pi-tool-bridge.js";
+import {
+	applyCursorApproximateUsage,
+	estimateCursorPromptInputTokens,
+	getCursorPromptOptions,
+} from "./cursor-usage-accounting.js";
+import { getCursorSessionCwd } from "../session/cursor-session-cwd.js";
+import { getActiveContextToolNames } from "../context/cursor-context-tools.js";
+import { CursorLiveRunAbortError, type CursorLiveRun } from "./cursor-live-run-coordinator.js";
+import {
+	abandonSessionCursorAgent,
+	createCursorNativeReplayId,
+	cursorLiveRuns,
+	drainCursorLiveRunTurn,
+	drainExistingCursorLiveRunBeforeSend,
+	DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS,
+	getPendingCursorLiveRun,
+	hasTrailingUserMessagesAfterToolResults,
+	releaseAllPendingCursorLiveRunsForTests,
+	resetCursorNativeReplayIdleDisposeMs,
+	selectCursorFinalText,
+	setCursorNativeReplayIdleDisposeMs,
+	settleCursorLiveToolBatch,
+} from "./cursor-provider-live-run-drain.js";
+
+import { buildCursorModelSelection } from "../discovery/model-discovery.js";
+import {
+	getCheckpointContextWindow,
+	saveCachedContextWindow,
+} from "../discovery/context-window-cache.js";
+import { CursorSdkTurnCoordinator } from "./cursor-provider-turn-coordinator.js";
+import { isCursorNativeToolDisplayRuntimeEnabled } from "../replay/cursor-native-tool-display.js";
+
+function makeInitialMessage(model: Model<Api>): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+}
+
+const CURSOR_API_KEY_ENV_VAR = "CURSOR_API_KEY";
+const MISSING_API_KEY_MESSAGE =
+	"Cursor SDK runs require a Cursor API key. Run /login -> Use an API key -> Cursor, set CURSOR_API_KEY before starting pi, or restart pi with --api-key.";
+const GENERIC_CURSOR_SDK_ERROR_MESSAGE =
+	"Cursor SDK request failed. The API key may be missing, invalid, or unauthorized. Run /login -> Use an API key -> Cursor, verify CURSOR_API_KEY, or pass --api-key, then retry.";
+const AUTH_CURSOR_SDK_ERROR_MESSAGE =
+	"Cursor SDK request failed because the API key may be invalid or unauthorized. Run /login -> Use an API key -> Cursor, verify CURSOR_API_KEY, or pass --api-key, then retry.";
+const CURSOR_SETTING_SOURCES_ENV = "PI_CURSOR_SETTING_SOURCES";
+
+import { scrubSensitiveText } from "../shared/cursor-sensitive-text.js";
+import { hasUsableText } from "../shared/cursor-record-utils.js";
+
+function isGenericErrorMessage(message: string): boolean {
+	const normalized = message.trim().toLowerCase();
+	return normalized === "" || normalized === "error" || normalized === "unknown error";
+}
+
+function isLikelyAuthError(message: string): boolean {
+	return /\b(unauthorized|unauthorised|forbidden|invalid api key|invalid key|authentication|auth|401|403)\b/i.test(
+		message,
+	);
+}
+
+function resolveCursorApiKey(apiKey?: string): string | undefined {
+	const trimmed = apiKey?.trim();
+	if (!trimmed) return undefined;
+	if (trimmed === CURSOR_API_KEY_ENV_VAR) return process.env.CURSOR_API_KEY?.trim();
+	return trimmed;
+}
+
+function resolveCursorSettingSources(): SettingSource[] | undefined {
+	const raw = process.env[CURSOR_SETTING_SOURCES_ENV]?.trim();
+	if (!raw) return ["all"];
+	const normalized = raw.toLowerCase();
+	if (["0", "false", "off", "none", "omit", "disabled"].includes(normalized)) return undefined;
+	if (["1", "true", "on", "all"].includes(normalized)) return ["all"];
+	return raw
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter((entry): entry is SettingSource => Boolean(entry));
+}
+
+function sanitizeError(error: unknown, apiKey?: string): string {
+	const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+	if (message === MISSING_API_KEY_MESSAGE) return MISSING_API_KEY_MESSAGE;
+	const scrubbed = scrubSensitiveText(message, apiKey).trim();
+	if (isGenericErrorMessage(scrubbed)) return GENERIC_CURSOR_SDK_ERROR_MESSAGE;
+	if (isLikelyAuthError(scrubbed)) return AUTH_CURSOR_SDK_ERROR_MESSAGE;
+	return scrubbed || GENERIC_CURSOR_SDK_ERROR_MESSAGE;
+}
+
+async function cacheSdkContextWindow(agentId: string, modelId: string): Promise<void> {
+	try {
+		const platform = await createAgentPlatform();
+		const checkpoint = await platform.checkpointStore.loadLatest(agentId);
+		const contextWindow = getCheckpointContextWindow(checkpoint);
+		if (contextWindow) saveCachedContextWindow(modelId, contextWindow);
+	} catch {
+		// Context-window cache failures must not affect response streaming.
+	}
+}
+
+export function streamCursor(
+	model: Model<Api>,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream {
+	const stream = createAssistantMessageEventStream();
+
+	(async () => {
+		const partial = makeInitialMessage(model);
+		let agent: SDKAgent | null = null;
+		let activeLiveRun: CursorLiveRun | undefined;
+		let bridgeRun: CursorPiToolBridgeRun | undefined;
+		let liveRunForBridgeQueue: CursorLiveRun | undefined;
+		const queuedBridgeRequestsBeforeLiveRun: CursorPiBridgeToolRequest[] = [];
+		let resolvedApiKey: string | undefined;
+		let sessionAgentScopeKey = "";
+		let abortSignal: AbortSignal | undefined;
+		let abortListener: (() => void) | undefined;
+		let restoreCursorSdkOutputFilter: (() => void) | undefined;
+
+		try {
+			const throwIfAborted = (): void => {
+				if (options?.signal?.aborted) throw new CursorLiveRunAbortError();
+			};
+
+			stream.push({ type: "start", partial });
+			throwIfAborted();
+
+			if (
+				(await drainExistingCursorLiveRunBeforeSend(
+					stream,
+					partial,
+					model,
+					context,
+					options?.signal,
+				)) === "stream_ended"
+			) {
+				stream.end();
+				return;
+			}
+
+			const apiKey = resolveCursorApiKey(options?.apiKey);
+			if (!apiKey) throw new Error(MISSING_API_KEY_MESSAGE);
+			resolvedApiKey = apiKey;
+
+			// pi-ai Context/SimpleStreamOptions do not expose ExtensionContext.cwd; bridge via session_start
+			// until pi threads session cwd into streamSimple (cwd can change without a new session event).
+			const cwd = getCursorSessionCwd();
+			const selection = buildCursorModelSelection(model.id, options?.reasoning ?? "off");
+			const settingSources = resolveCursorSettingSources();
+
+			installCursorMcpToolTimeoutOverride();
+			restoreCursorSdkOutputFilter = installCursorSdkOutputFilter();
+			const sessionAgentAcquireParams = {
+				apiKey,
+				cwd,
+				modelSelection: selection,
+				settingSources,
+				onBridgeToolRequest: (request: CursorPiBridgeToolRequest) => {
+					if (liveRunForBridgeQueue && !liveRunForBridgeQueue.disposed) {
+						cursorLiveRuns.queueEvent(liveRunForBridgeQueue, { type: "bridge-tool", request });
+					} else {
+						queuedBridgeRequestsBeforeLiveRun.push(request);
+					}
+				},
+				createAgent: (createOptions: Parameters<typeof Agent.create>[0]) =>
+					suppressCursorSdkOutput(() => Agent.create(createOptions)),
+			};
+			let sessionAgentLease = await acquireSessionCursorAgent(sessionAgentAcquireParams);
+			sessionAgentScopeKey = sessionAgentLease.scopeKey;
+			agent = sessionAgentLease.agent;
+			bridgeRun = sessionAgentLease.bridgeRun;
+			throwIfAborted();
+
+			const promptOptions = getCursorPromptOptions(model);
+			let { prompt, bootstrap } = buildCursorSendPrompt(
+				context,
+				promptOptions,
+				sessionAgentLease.sendState,
+			);
+			if (sessionAgentLease.sendState.bootstrapped && bootstrap) {
+				await resetSessionCursorAgent(sessionAgentLease.scopeKey);
+				sessionAgentLease = await acquireSessionCursorAgent(sessionAgentAcquireParams);
+				sessionAgentScopeKey = sessionAgentLease.scopeKey;
+				agent = sessionAgentLease.agent;
+				bridgeRun = sessionAgentLease.bridgeRun;
+				({ prompt, bootstrap } = buildCursorSendPrompt(
+					context,
+					promptOptions,
+					sessionAgentLease.sendState,
+				));
+			}
+			const sessionBridgeRun = sessionAgentLease.bridgeRun;
+			const promptInputTokens = estimateCursorPromptInputTokens(prompt, promptOptions);
+			const useNativeToolReplay = isCursorNativeToolDisplayRuntimeEnabled();
+			const activeToolNames = getActiveContextToolNames(context);
+			const nativeReplayId = createCursorNativeReplayId();
+			const textDeltas: string[] = [];
+			const useLiveRun = useNativeToolReplay || bridgeRun !== undefined;
+			const liveRun: CursorLiveRun | undefined = useLiveRun
+				? cursorLiveRuns.start({
+						id: useNativeToolReplay ? nativeReplayId : bridgeRun!.id,
+						agent,
+						bridgeRun,
+						sessionBridgeRun,
+						sessionAgentScopeKey,
+						promptInputTokens,
+						textDeltas,
+					})
+				: undefined;
+			if (liveRun) {
+				activeLiveRun = liveRun;
+				liveRunForBridgeQueue = liveRun;
+				for (const request of queuedBridgeRequestsBeforeLiveRun.splice(0)) {
+					cursorLiveRuns.queueEvent(liveRun, { type: "bridge-tool", request });
+				}
+			}
+			const turnCoordinator = new CursorSdkTurnCoordinator({
+				stream,
+				partial,
+				cwd,
+				resolvedApiKey,
+				liveRun,
+				useNativeToolReplay,
+				activeToolNames,
+				nativeReplayId,
+				textDeltas,
+			});
+
+			// Handle abort signal
+			let run: Awaited<ReturnType<SDKAgent["send"]>> | null = null;
+			abortListener = () => {
+				activeLiveRun?.bridgeRun?.cancel("Cursor SDK run aborted");
+				if (run) {
+					run.cancel().catch(() => {});
+				}
+			};
+			abortSignal = options?.signal;
+			abortSignal?.addEventListener("abort", abortListener, { once: true });
+
+			throwIfAborted();
+			run = await agent.send(
+				{ text: prompt.text, images: prompt.images.length > 0 ? prompt.images : undefined },
+				{
+					onDelta: (args) => turnCoordinator.handleDelta(args.update),
+					onStep: (args) => turnCoordinator.handleStep(args.step),
+				},
+			);
+			if (liveRun) cursorLiveRuns.attachSdkRun(liveRun, run);
+			if (options?.signal?.aborted) {
+				await run.cancel().catch(() => {});
+				throw new CursorLiveRunAbortError();
+			}
+
+			if (liveRun) {
+				void run
+					.wait()
+					.then(async (result) => {
+						if (liveRun.disposed) return;
+						turnCoordinator.discardIncompleteStartedToolCalls();
+						await cacheSdkContextWindow(liveRun.agent.agentId, model.id);
+						if (liveRun.disposed) return;
+						if (result.status === "finished" && !options?.signal?.aborted) {
+							commitSessionAgentSend(sessionAgentScopeKey, context, bootstrap);
+							cursorLiveRuns.markFinished(
+								liveRun,
+								selectCursorFinalText(
+									result.result,
+									liveRun.textDeltas,
+									liveRun.emittedText,
+									turnCoordinator.planTextCandidate,
+								),
+							);
+						} else if (result.status === "cancelled" || options?.signal?.aborted) {
+							cursorLiveRuns.markCancelled(liveRun);
+						} else {
+							cursorLiveRuns.markError(
+								liveRun,
+								sanitizeError(
+									result.result ?? "Cursor SDK run failed",
+									resolvedApiKey ?? options?.apiKey,
+								),
+							);
+						}
+					})
+					.catch(async (error: unknown) => {
+						if (liveRun.disposed) return;
+						cursorLiveRuns.markError(
+							liveRun,
+							sanitizeError(error, resolvedApiKey ?? options?.apiKey),
+						);
+					});
+
+				try {
+					await cursorLiveRuns.withRunLease(liveRun, options?.signal, async () => {
+						await cursorLiveRuns.waitForProgress(liveRun, options?.signal);
+						await settleCursorLiveToolBatch(liveRun);
+						turnCoordinator.closeTraceBlock();
+						await drainCursorLiveRunTurn(stream, partial, model, context, liveRun, 0, {
+							mode: "emit",
+							signal: options?.signal,
+						});
+					});
+				} catch (error) {
+					if (error instanceof CursorLiveRunAbortError) await cursorLiveRuns.release(liveRun);
+					throw error;
+				}
+				agent = null;
+				return;
+			}
+
+			const result = await run.wait();
+			turnCoordinator.discardIncompleteStartedToolCalls();
+			await cacheSdkContextWindow(agent.agentId, model.id);
+
+			// Close any open thinking/activity trace, then use the final run result only when
+			// Cursor did not stream text deltas.
+			turnCoordinator.closeTraceBlock();
+
+			if (result.status === "cancelled") {
+				await abandonSessionCursorAgent(sessionAgentScopeKey);
+				partial.stopReason = "aborted";
+				stream.push({ type: "error", reason: "aborted", error: partial });
+			} else if (result.status === "error") {
+				await abandonSessionCursorAgent(sessionAgentScopeKey);
+				partial.stopReason = "error";
+				partial.errorMessage = sanitizeError(
+					result.result ?? "Cursor SDK run failed",
+					resolvedApiKey ?? options?.apiKey,
+				);
+				stream.push({ type: "error", reason: "error", error: partial });
+			} else {
+				commitSessionAgentSend(sessionAgentScopeKey, context, bootstrap);
+				const finalCursorText = selectCursorFinalText(
+					result.result,
+					textDeltas,
+					textDeltas.join(""),
+					turnCoordinator.planTextCandidate,
+					{
+						allowPartialPrefix: true,
+					},
+				);
+				turnCoordinator.flushText(hasUsableText(finalCursorText) ? [finalCursorText] : []);
+				applyCursorApproximateUsage(partial, model, context, promptInputTokens);
+				stream.push({ type: "done", reason: "stop", message: partial });
+			}
+		} catch (error) {
+			if (activeLiveRun && !activeLiveRun.disposed) await cursorLiveRuns.release(activeLiveRun);
+			else await abandonSessionCursorAgent(sessionAgentScopeKey);
+			if (error instanceof CursorLiveRunAbortError) {
+				partial.stopReason = "aborted";
+				stream.push({ type: "error", reason: "aborted", error: partial });
+			} else {
+				partial.stopReason = "error";
+				partial.errorMessage = sanitizeError(error, resolvedApiKey ?? options?.apiKey);
+				stream.push({ type: "error", reason: "error", error: partial });
+			}
+		} finally {
+			restoreCursorSdkOutputFilter?.();
+
+			if (abortSignal && abortListener) {
+				abortSignal.removeEventListener("abort", abortListener);
+			}
+		}
+
+		stream.end();
+	})();
+
+	return stream;
+}
+
+export const __testUtils = {
+	DEFAULT_CURSOR_NATIVE_REPLAY_IDLE_DISPOSE_MS,
+	pendingCursorNativeRunCount: cursorLiveRuns.count,
+	getPendingCursorLiveRun,
+	getActiveCursorLiveRunForScope: cursorLiveRuns.getActiveForScope,
+	hasTrailingUserMessagesAfterToolResults,
+	setCursorNativeReplayIdleDisposeMs,
+	resetCursorNativeReplayIdleDisposeMs,
+	releaseAllPendingCursorLiveRunsForTests,
+	resetSessionCursorAgents: () => disposeAllSessionCursorAgents(),
+};

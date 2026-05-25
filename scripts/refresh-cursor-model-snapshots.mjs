@@ -3,8 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { Cursor } from "@cursor/sdk";
 
-const FALLBACK_MODELS_PATH = "src/cursor-fallback-models.generated.ts";
-const CONTEXT_WINDOWS_PATH = "src/bundled-context-windows.ts";
+const FALLBACK_MODELS_PATH = "src/discovery/cursor-fallback-models.generated.ts";
+const CONTEXT_WINDOWS_PATH = "src/discovery/bundled-context-windows.ts";
 const DEFAULT_CONTEXT_WINDOW = 200000;
 
 function printHelp() {
@@ -50,7 +50,10 @@ function scrubSensitiveText(text, secrets = []) {
 	}
 	return scrubbed
 		.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
-		.replace(/(api[_-]?key|authorization|auth[_-]?token)([\"'\s:=]+)[^\"'\s,}]+/gi, "$1$2[REDACTED]");
+		.replace(
+			/(api[_-]?key|authorization|auth[_-]?token)([\"'\s:=]+)[^\"'\s,}]+/gi,
+			"$1$2[REDACTED]",
+		);
 }
 
 function parseArgs(argv) {
@@ -92,12 +95,16 @@ function parseArgs(argv) {
 		}
 		if (arg === "--fallback-context-window") {
 			const value = argv[++index];
-			if (!value || value.startsWith("--")) fail("--fallback-context-window requires a positive integer");
+			if (!value || value.startsWith("--"))
+				fail("--fallback-context-window requires a positive integer");
 			args.fallbackContextWindow = parsePositiveInteger(value, "--fallback-context-window");
 			continue;
 		}
 		if (arg.startsWith("--fallback-context-window=")) {
-			args.fallbackContextWindow = parsePositiveInteger(arg.slice("--fallback-context-window=".length), "--fallback-context-window");
+			args.fallbackContextWindow = parsePositiveInteger(
+				arg.slice("--fallback-context-window=".length),
+				"--fallback-context-window",
+			);
 			continue;
 		}
 		fail(`unknown argument ${arg}`);
@@ -124,7 +131,9 @@ function sanitizeModelItem(item) {
 						id: parameter.id,
 						displayName: parameter.displayName,
 						values: Array.isArray(parameter.values)
-							? parameter.values.map((value) => stripUndefined({ value: value.value, displayName: value.displayName }))
+							? parameter.values.map((value) =>
+									stripUndefined({ value: value.value, displayName: value.displayName }),
+								)
 							: [],
 					}),
 				)
@@ -132,7 +141,9 @@ function sanitizeModelItem(item) {
 		variants: Array.isArray(item.variants)
 			? item.variants.map((variant) =>
 					stripUndefined({
-						params: Array.isArray(variant.params) ? variant.params.map((param) => ({ id: param.id, value: param.value })) : [],
+						params: Array.isArray(variant.params)
+							? variant.params.map((param) => ({ id: param.id, value: param.value }))
+							: [],
 						displayName: variant.displayName,
 						description: variant.description,
 						isDefault: variant.isDefault,
@@ -173,7 +184,10 @@ function parseContextWindowsFile(path) {
 	} catch (error) {
 		fail(`could not read ${path}: ${error instanceof Error ? error.message : String(error)}`);
 	}
-	const source = parsed.contextWindows && typeof parsed.contextWindows === "object" ? parsed.contextWindows : parsed;
+	const source =
+		parsed.contextWindows && typeof parsed.contextWindows === "object"
+			? parsed.contextWindows
+			: parsed;
 	const windows = new Map();
 	for (const [modelId, contextWindow] of Object.entries(source)) {
 		if (Number.isInteger(contextWindow) && contextWindow > 0) windows.set(modelId, contextWindow);
@@ -190,13 +204,18 @@ function formatContextWindows(models, checkpointWindows, fallbackContextWindow) 
 	const merged = new Map(existing);
 	for (const [modelId, contextWindow] of checkpointWindows) merged.set(modelId, contextWindow);
 	for (const model of models) {
-		if (!hasContextParameter(model) && !merged.has(model.id)) merged.set(model.id, fallbackContextWindow);
+		if (!hasContextParameter(model) && !merged.has(model.id))
+			merged.set(model.id, fallbackContextWindow);
 	}
 	if (!merged.has("default")) merged.set("default", fallbackContextWindow);
 
 	const date = new Date().toISOString().slice(0, 10);
-	const sorted = [...merged.entries()].sort(([a], [b]) => (a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)));
-	const lines = sorted.map(([modelId, contextWindow]) => `\t${JSON.stringify(modelId)}: ${contextWindow},`);
+	const sorted = [...merged.entries()].sort(([a], [b]) =>
+		a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b),
+	);
+	const lines = sorted.map(
+		([modelId, contextWindow]) => `\t${JSON.stringify(modelId)}: ${contextWindow},`,
+	);
 	return `// Generated from Cursor SDK checkpoint tokenDetails.maxTokens on ${date}.\n// Refresh with: npm run refresh:cursor-snapshots -- --write --context-windows ~/.pi/agent/cursor-sdk-context-windows.json\n// These are default/non-Max-mode SDK context windows for Cursor models that do not\n// expose a catalog \`context\` parameter. Do not replace them with Max Mode values\n// unless the Cursor SDK exposes an exact Max Mode model selection and the extension\n// uses that selection for matching pi model IDs.\nexport const BUNDLED_CONTEXT_WINDOWS = {\n${lines.join("\n")}\n} as const satisfies Record<string, number>;\n`;
 }
 
@@ -208,17 +227,27 @@ try {
 	const rawMessage = error instanceof Error ? error.message : String(error);
 	fail(`Cursor.models.list() failed: ${scrubSensitiveText(rawMessage, [args.apiKey])}`);
 }
-if (!Array.isArray(rawModels) || rawModels.length === 0) fail("Cursor.models.list() returned no models");
+if (!Array.isArray(rawModels) || rawModels.length === 0)
+	fail("Cursor.models.list() returned no models");
 
 const models = rawModels.map(sanitizeModelItem).sort((a, b) => a.id.localeCompare(b.id));
 const checkpointWindows = parseContextWindowsFile(args.contextWindowsPath);
 const fallbackSource = formatFallbackModels(models);
-const contextWindowSource = args.contextWindowsPath ? formatContextWindows(models, checkpointWindows, args.fallbackContextWindow) : undefined;
+const contextWindowSource = args.contextWindowsPath
+	? formatContextWindows(models, checkpointWindows, args.fallbackContextWindow)
+	: undefined;
 const existingContextWindowCount = parseExistingContextWindows().size;
 
 console.log(`Fetched ${models.length} Cursor models.`);
-console.log(`Context windows: ${checkpointWindows.size} checkpoint override(s), ${existingContextWindowCount} existing bundled entr${existingContextWindowCount === 1 ? "y" : "ies"}.`);
-console.log(`First models: ${models.slice(0, 8).map((model) => model.id).join(", ")}${models.length > 8 ? ", ..." : ""}`);
+console.log(
+	`Context windows: ${checkpointWindows.size} checkpoint override(s), ${existingContextWindowCount} existing bundled entr${existingContextWindowCount === 1 ? "y" : "ies"}.`,
+);
+console.log(
+	`First models: ${models
+		.slice(0, 8)
+		.map((model) => model.id)
+		.join(", ")}${models.length > 8 ? ", ..." : ""}`,
+);
 
 if (args.write) {
 	writeFileSync(FALLBACK_MODELS_PATH, fallbackSource);
@@ -227,7 +256,9 @@ if (args.write) {
 		writeFileSync(CONTEXT_WINDOWS_PATH, contextWindowSource);
 		console.log(`Wrote ${CONTEXT_WINDOWS_PATH}`);
 	} else {
-		console.log(`Skipped ${CONTEXT_WINDOWS_PATH}; pass --context-windows to refresh checkpoint-derived context windows.`);
+		console.log(
+			`Skipped ${CONTEXT_WINDOWS_PATH}; pass --context-windows to refresh checkpoint-derived context windows.`,
+		);
 	}
 } else {
 	console.log("Dry run only. Re-run with --write to update snapshots.");

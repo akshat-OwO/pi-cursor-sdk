@@ -3,10 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context, Model } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, ProviderConfig } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	ProviderConfig,
+} from "@earendil-works/pi-coding-agent";
 
-vi.mock("../src/model-discovery.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../src/model-discovery.js")>();
+vi.mock("../src/discovery/model-discovery.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../src/discovery/model-discovery.js")>();
 	return {
 		...actual,
 		discoverModels: vi.fn(),
@@ -46,10 +50,13 @@ vi.mock("@cursor/sdk", () => ({
 import { Agent } from "@cursor/sdk";
 import type { AssistantMessageEventStream } from "@earendil-works/pi-ai";
 import extensionFactory from "../src/index.js";
-import { discoverModels, loadCachedCursorModels } from "../src/model-discovery.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
-import { __testUtils as cursorSessionCwdTestUtils } from "../src/cursor-session-cwd.js";
-import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/cursor-pi-tool-bridge.js";
+import { discoverModels, loadCachedCursorModels } from "../src/discovery/model-discovery.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
+import { __testUtils as cursorSessionCwdTestUtils } from "../src/session/cursor-session-cwd.js";
+import { __testUtils as cursorPiToolBridgeTestUtils } from "../src/bridge/cursor-pi-tool-bridge.js";
 
 const mockedDiscover = vi.mocked(discoverModels);
 const mockedLoadCachedCursorModels = vi.mocked(loadCachedCursorModels);

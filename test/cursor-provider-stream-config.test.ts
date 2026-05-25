@@ -29,20 +29,21 @@ import {
 	type CursorStepHandler,
 	type RegisteredTool,
 } from "./helpers/cursor-provider-harness.js";
-import { streamCursor, __testUtils as cursorProviderTestUtils } from "../src/cursor-provider.js";
-import { __testUtils as contextWindowCacheTestUtils } from "../src/context-window-cache.js";
-import { __testUtils as modelDiscoveryTestUtils } from "../src/model-discovery.js";
+import {
+	streamCursor,
+	__testUtils as cursorProviderTestUtils,
+} from "../src/provider/cursor-provider.js";
+import { __testUtils as contextWindowCacheTestUtils } from "../src/discovery/context-window-cache.js";
+import { __testUtils as modelDiscoveryTestUtils } from "../src/discovery/model-discovery.js";
 import type { Context } from "@earendil-works/pi-ai";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-
-
 describe("streamCursor prompt and model config", () => {
 	beforeEach(resetCursorProviderTestState);
 
-it("budgets oversized prompt history before Cursor Agent.send", async () => {
+	it("budgets oversized prompt history before Cursor Agent.send", async () => {
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
 			agentId: "agent-1",
@@ -159,7 +160,9 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 		process.env.PI_CODING_AGENT_DIR = tmpAgentDir;
 		try {
-			const loadLatest = vi.fn().mockResolvedValue({ tokenDetails: { usedTokens: 8435, maxTokens: 201000 } });
+			const loadLatest = vi
+				.fn()
+				.mockResolvedValue({ tokenDetails: { usedTokens: 8435, maxTokens: 201000 } });
 			mockedCreateAgentPlatform.mockResolvedValue(createMockAgentPlatform(loadLatest));
 			const mockSend = vi.fn().mockResolvedValue({
 				id: "run-1",
@@ -199,7 +202,11 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 				aliases: ["gpt-latest"],
 				parameters: [
 					{ id: "context", displayName: "Context", values: [{ value: "1m" }, { value: "272k" }] },
-					{ id: "reasoning", displayName: "Reasoning", values: [{ value: "none" }, { value: "medium" }] },
+					{
+						id: "reasoning",
+						displayName: "Reasoning",
+						values: [{ value: "none" }, { value: "medium" }],
+					},
 				],
 				variants: [
 					{
@@ -227,7 +234,10 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const stream = streamCursor(makeModel("gpt-latest@272k"), makeContext(), { apiKey: "test-key", reasoning: "medium" });
+		const stream = streamCursor(makeModel("gpt-latest@272k"), makeContext(), {
+			apiKey: "test-key",
+			reasoning: "medium",
+		});
 		await collectEvents(stream);
 
 		expect(mockedCreate).toHaveBeenCalledWith(
@@ -280,7 +290,14 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 		const modelWithParams = {
 			...makeModel("gpt-5.5@1m"),
 			reasoning: true,
-			thinkingLevelMap: { low: "low", medium: "medium", high: "high", xhigh: "extra-high", off: null, minimal: null },
+			thinkingLevelMap: {
+				low: "low",
+				medium: "medium",
+				high: "high",
+				xhigh: "extra-high",
+				off: null,
+				minimal: null,
+			},
 		};
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
@@ -296,7 +313,10 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const stream = streamCursor(modelWithParams, makeContext(), { apiKey: "test-key", reasoning: "medium" });
+		const stream = streamCursor(modelWithParams, makeContext(), {
+			apiKey: "test-key",
+			reasoning: "medium",
+		});
 		await collectEvents(stream);
 
 		expect(mockedCreate).toHaveBeenCalledWith(
@@ -317,7 +337,14 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 		const modelWithParams = {
 			...makeModel("gpt-5.5@272k"),
 			reasoning: true,
-			thinkingLevelMap: { low: "low", medium: "medium", high: "high", xhigh: "extra-high", off: null, minimal: null },
+			thinkingLevelMap: {
+				low: "low",
+				medium: "medium",
+				high: "high",
+				xhigh: "extra-high",
+				off: null,
+				minimal: null,
+			},
 		};
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",
@@ -333,7 +360,10 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const stream = streamCursor(modelWithParams, makeContext(), { apiKey: "test-key", reasoning: "xhigh" });
+		const stream = streamCursor(modelWithParams, makeContext(), {
+			apiKey: "test-key",
+			reasoning: "xhigh",
+		});
 		await collectEvents(stream);
 
 		expect(mockedCreate).toHaveBeenCalledWith(
@@ -376,7 +406,10 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 			[Symbol.asyncDispose]: vi.fn().mockResolvedValue(undefined),
 		});
 
-		const stream = streamCursor(modelWithParams, makeContext(), { apiKey: "test-key", reasoning: "xhigh" });
+		const stream = streamCursor(modelWithParams, makeContext(), {
+			apiKey: "test-key",
+			reasoning: "xhigh",
+		});
 		await collectEvents(stream);
 
 		expect(mockedCreate).toHaveBeenCalledWith(
@@ -397,7 +430,13 @@ it("budgets oversized prompt history before Cursor Agent.send", async () => {
 		const modelWithParams = {
 			...makeModel("claude-sonnet-4-6@1m"),
 			reasoning: true,
-			thinkingLevelMap: { off: "false", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+			thinkingLevelMap: {
+				off: "false",
+				low: "low",
+				medium: "medium",
+				high: "high",
+				xhigh: "xhigh",
+			},
 		};
 		const mockSend = vi.fn().mockResolvedValue({
 			id: "run-1",

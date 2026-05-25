@@ -2,17 +2,22 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ExtensionContext, ProviderConfig, ToolDefinition, ToolInfo } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionContext,
+	ProviderConfig,
+	ToolDefinition,
+	ToolInfo,
+} from "@earendil-works/pi-coding-agent";
 import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { Type, type TSchema } from "typebox";
 
-vi.mock("../src/model-discovery.js", () => ({
+vi.mock("../src/discovery/model-discovery.js", () => ({
 	discoverModels: vi.fn(),
 	loadCachedCursorModels: vi.fn(),
 	getCursorModelMetadata: vi.fn(),
 }));
 
-vi.mock("../src/cursor-provider.js", () => ({
+vi.mock("../src/provider/cursor-provider.js", () => ({
 	streamCursor: vi.fn(),
 }));
 
@@ -26,17 +31,20 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import extensionFactory from "../src/index.js";
-import { __cursorAgentSettingsTestUtils } from "../src/cursor-agent-settings.js";
-import { discoverModels, loadCachedCursorModels } from "../src/model-discovery.js";
-import { streamCursor } from "../src/cursor-provider.js";
+import { __cursorAgentSettingsTestUtils } from "../src/settings/cursor-agent-settings.js";
+import { discoverModels, loadCachedCursorModels } from "../src/discovery/model-discovery.js";
+import { streamCursor } from "../src/provider/cursor-provider.js";
 import {
 	__testUtils as nativeToolDisplayTestUtils,
 	canRenderCursorToolNatively,
 	recordCursorNativeToolDisplay,
-} from "../src/cursor-native-tool-display.js";
-import { __testUtils as cursorPiToolBridgeTestUtils, buildCursorPiToolBridgeSnapshot } from "../src/cursor-pi-tool-bridge.js";
-import { CURSOR_ASK_QUESTION_TOOL_NAME } from "../src/cursor-question-tool.js";
-import { __testUtils as cursorSessionCwdTestUtils } from "../src/cursor-session-cwd.js";
+} from "../src/replay/cursor-native-tool-display.js";
+import {
+	__testUtils as cursorPiToolBridgeTestUtils,
+	buildCursorPiToolBridgeSnapshot,
+} from "../src/bridge/cursor-pi-tool-bridge.js";
+import { CURSOR_ASK_QUESTION_TOOL_NAME } from "../src/bridge/cursor-question-tool.js";
+import { __testUtils as cursorSessionCwdTestUtils } from "../src/session/cursor-session-cwd.js";
 
 const mockedDiscover = vi.mocked(discoverModels);
 const mockedLoadCachedCursorModels = vi.mocked(loadCachedCursorModels);
@@ -62,23 +70,37 @@ function createBuiltinToolInfo(name: string): ToolInfo {
 		name,
 		description: "",
 		parameters: Type.Object({}),
-		sourceInfo: { source: "builtin", path: `<builtin:${name}>`, scope: "temporary", origin: "top-level" },
+		sourceInfo: {
+			source: "builtin",
+			path: `<builtin:${name}>`,
+			scope: "temporary",
+			origin: "top-level",
+		},
 	};
 }
 
-function createTestExtensionContext(ctxOverrides: Partial<TestExtensionContext> = {}): TestExtensionContext {
+function createTestExtensionContext(
+	ctxOverrides: Partial<TestExtensionContext> = {},
+): TestExtensionContext {
 	const notify = vi.fn();
 	return {
 		cwd: process.cwd(),
 		hasUI: true,
-		model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"],
+		model: {
+			provider: "cursor",
+			api: "cursor-sdk",
+			id: "composer-2.5",
+		} as ExtensionContext["model"],
 		ui: { notify, setStatus: vi.fn(), select: vi.fn(), input: vi.fn() },
 		sessionManager: { getBranch: vi.fn(() => []) },
 		...ctxOverrides,
 	};
 }
 
-async function runSessionStartHandlers(pi: ReturnType<typeof createMockPi>, ctxOverrides: Partial<TestExtensionContext> = {}): Promise<void> {
+async function runSessionStartHandlers(
+	pi: ReturnType<typeof createMockPi>,
+	ctxOverrides: Partial<TestExtensionContext> = {},
+): Promise<void> {
 	const ctx = createTestExtensionContext(ctxOverrides);
 	for (const handler of pi._handlers.get("session_start") ?? []) {
 		await handler({ reason: "startup" }, ctx);
@@ -96,14 +118,23 @@ async function runModelSelectHandlers(
 	}
 }
 
-async function runBeforeAgentStartHandlers(pi: ReturnType<typeof createMockPi>, ctxOverrides: Partial<TestExtensionContext> = {}): Promise<void> {
+async function runBeforeAgentStartHandlers(
+	pi: ReturnType<typeof createMockPi>,
+	ctxOverrides: Partial<TestExtensionContext> = {},
+): Promise<void> {
 	const ctx = createTestExtensionContext(ctxOverrides);
 	for (const handler of pi._handlers.get("before_agent_start") ?? []) {
-		await handler({ type: "before_agent_start", prompt: "start", systemPrompt: "", systemPromptOptions: {} }, ctx);
+		await handler(
+			{ type: "before_agent_start", prompt: "start", systemPrompt: "", systemPromptOptions: {} },
+			ctx,
+		);
 	}
 }
 
-async function runTurnStartHandlers(pi: ReturnType<typeof createMockPi>, ctxOverrides: Partial<TestExtensionContext> = {}): Promise<void> {
+async function runTurnStartHandlers(
+	pi: ReturnType<typeof createMockPi>,
+	ctxOverrides: Partial<TestExtensionContext> = {},
+): Promise<void> {
 	const ctx = createTestExtensionContext(ctxOverrides);
 	for (const handler of pi._handlers.get("turn_start") ?? []) {
 		await handler({ type: "turn_start", turnIndex: 1, timestamp: Date.now() }, ctx);
@@ -116,7 +147,9 @@ function createMockPi(existingTools?: ToolInfo[]) {
 	const tools: RegisteredTool[] = [];
 	const handlers = new Map<string, TestEventHandler[]>();
 	let activeToolNames = ["read", "bash", "edit", "write"];
-	const initialTools = existingTools ?? ["read", "bash", "grep", "find", "ls", "edit", "write"].map(createBuiltinToolInfo);
+	const initialTools =
+		existingTools ??
+		["read", "bash", "grep", "find", "ls", "edit", "write"].map(createBuiltinToolInfo);
 	return {
 		registerProvider: vi.fn((name: string, config: ProviderConfig) => {
 			registered.push({ name, config });
@@ -136,7 +169,12 @@ function createMockPi(existingTools?: ToolInfo[]) {
 					name: tool.name,
 					description: tool.description,
 					parameters: tool.parameters,
-					sourceInfo: { source: "test", path: "pi-cursor-sdk-test", scope: "temporary", origin: "top-level" },
+					sourceInfo: {
+						source: "test",
+						path: "pi-cursor-sdk-test",
+						scope: "temporary",
+						origin: "top-level",
+					},
 				});
 			}
 			return [...toolsByName.values()];
@@ -199,7 +237,9 @@ describe("extension factory", () => {
 
 		expect(pi.registerCommand).toHaveBeenCalledWith(
 			"cursor-refresh-models",
-			expect.objectContaining({ description: expect.stringContaining("Refresh the live Cursor model catalog") }),
+			expect.objectContaining({
+				description: expect.stringContaining("Refresh the live Cursor model catalog"),
+			}),
 		);
 		expect(pi.registerTool).toHaveBeenCalledTimes(18);
 		expect(pi._tools.map((tool) => tool.name)).toEqual([
@@ -376,10 +416,11 @@ describe("extension factory", () => {
 		expect(pi._activeToolNames()).toContain(CURSOR_ASK_QUESTION_TOOL_NAME);
 		expect(pi._activeToolNames()).not.toContain("cursor_edit");
 
-		await runModelSelectHandlers(
-			pi,
-			{ provider: "openai-codex", api: "openai-codex-responses", id: "gpt-5.5" } as ExtensionContext["model"],
-		);
+		await runModelSelectHandlers(pi, {
+			provider: "openai-codex",
+			api: "openai-codex-responses",
+			id: "gpt-5.5",
+		} as ExtensionContext["model"]);
 		expect(pi._activeToolNames()).not.toContain("cursor_edit");
 		expect(pi._activeToolNames()).not.toContain("cursor_generate_image");
 		expect(pi._activeToolNames()).not.toContain("cursor");
@@ -388,7 +429,11 @@ describe("extension factory", () => {
 		expect(pi._activeToolNames()).not.toContain("find");
 		expect(pi._activeToolNames()).toContain("read");
 
-		await runModelSelectHandlers(pi, { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"]);
+		await runModelSelectHandlers(pi, {
+			provider: "cursor",
+			api: "cursor-sdk",
+			id: "composer-2.5",
+		} as ExtensionContext["model"]);
 		expect(pi._activeToolNames()).toContain("cursor");
 		expect(pi._activeToolNames()).toContain(CURSOR_ASK_QUESTION_TOOL_NAME);
 		expect(pi._activeToolNames()).not.toContain("cursor_edit");
@@ -406,19 +451,35 @@ describe("extension factory", () => {
 		expect(pi._activeToolNames()).not.toContain("grep");
 		expect(pi._activeToolNames()).not.toContain(CURSOR_ASK_QUESTION_TOOL_NAME);
 
-		await runBeforeAgentStartHandlers(pi, { model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"] });
+		await runBeforeAgentStartHandlers(pi, {
+			model: {
+				provider: "cursor",
+				api: "cursor-sdk",
+				id: "composer-2.5",
+			} as ExtensionContext["model"],
+		});
 
 		expect(pi._activeToolNames()).toContain("cursor");
 		expect(pi._activeToolNames()).toContain("grep");
 		expect(pi._activeToolNames()).toContain(CURSOR_ASK_QUESTION_TOOL_NAME);
-		expect(buildCursorPiToolBridgeSnapshot(pi).piToolNameToMcpToolName.get(CURSOR_ASK_QUESTION_TOOL_NAME)).toBe("pi__cursor_ask_question");
+		expect(
+			buildCursorPiToolBridgeSnapshot(pi).piToolNameToMcpToolName.get(
+				CURSOR_ASK_QUESTION_TOOL_NAME,
+			),
+		).toBe("pi__cursor_ask_question");
 
 		pi.setActiveTools(["read", "bash", "edit", "write"]);
 		expect(pi._activeToolNames()).not.toContain("cursor");
 		expect(pi._activeToolNames()).not.toContain("grep");
 		expect(pi._activeToolNames()).not.toContain(CURSOR_ASK_QUESTION_TOOL_NAME);
 
-		await runTurnStartHandlers(pi, { model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"] });
+		await runTurnStartHandlers(pi, {
+			model: {
+				provider: "cursor",
+				api: "cursor-sdk",
+				id: "composer-2.5",
+			} as ExtensionContext["model"],
+		});
 
 		expect(pi._activeToolNames()).toContain("cursor");
 		expect(pi._activeToolNames()).toContain("grep");
@@ -447,10 +508,15 @@ describe("extension factory", () => {
 			},
 			undefined,
 			undefined,
-			createTestExtensionContext({ ui: { notify: vi.fn(), setStatus: vi.fn(), select, input } }) as never,
+			createTestExtensionContext({
+				ui: { notify: vi.fn(), setStatus: vi.fn(), select, input },
+			}) as never,
 		);
 
-		expect(select).toHaveBeenCalledWith("What kind of calculator should Cursor plan?", ["Web app", "CLI"]);
+		expect(select).toHaveBeenCalledWith("What kind of calculator should Cursor plan?", [
+			"Web app",
+			"CLI",
+		]);
 		expect(input).not.toHaveBeenCalled();
 		expect(result.content).toEqual([{ type: "text", text: "User answered: Web app" }]);
 		expect(result.details).toMatchObject({
@@ -473,8 +539,12 @@ describe("extension factory", () => {
 		expect(pi._activeToolNames()).toContain(CURSOR_ASK_QUESTION_TOOL_NAME);
 
 		const snapshot = buildCursorPiToolBridgeSnapshot(pi);
-		expect(snapshot.piToolNameToMcpToolName.get(CURSOR_ASK_QUESTION_TOOL_NAME)).toBe("pi__cursor_ask_question");
-		expect(snapshot.tools.find((tool) => tool.piToolName === CURSOR_ASK_QUESTION_TOOL_NAME)?.description).toContain("Ask the user");
+		expect(snapshot.piToolNameToMcpToolName.get(CURSOR_ASK_QUESTION_TOOL_NAME)).toBe(
+			"pi__cursor_ask_question",
+		);
+		expect(
+			snapshot.tools.find((tool) => tool.piToolName === CURSOR_ASK_QUESTION_TOOL_NAME)?.description,
+		).toContain("Ask the user");
 	});
 
 	it("honors PI_CURSOR_PI_TOOL_BRIDGE=0 at the extension registration path", async () => {
@@ -568,7 +638,10 @@ describe("extension factory", () => {
 		mockedDiscover
 			.mockResolvedValueOnce([])
 			.mockImplementationOnce(async (options: DiscoverOptions) => {
-				options.onFallback({ reason: "missing-api-key", message: "missing key; using fallback models" });
+				options.onFallback({
+					reason: "missing-api-key",
+					message: "missing key; using fallback models",
+				});
 				return [];
 			});
 		const pi = createMockPi();
@@ -631,7 +704,10 @@ describe("extension factory", () => {
 
 	it("does not notify fallback discovery issues without UI", async () => {
 		mockedDiscover.mockImplementationOnce(async (options: DiscoverOptions) => {
-			options.onFallback({ reason: "empty-model-list", message: "Cursor model discovery returned no models; using fallback Cursor model list." });
+			options.onFallback({
+				reason: "empty-model-list",
+				message: "Cursor model discovery returned no models; using fallback Cursor model list.",
+			});
 			return [];
 		});
 
@@ -639,7 +715,12 @@ describe("extension factory", () => {
 		await extensionFactory(pi);
 
 		const notify = vi.fn();
-		const ctx = { cwd: process.cwd(), hasUI: false, ui: { notify, setStatus: vi.fn() }, sessionManager: { getBranch: vi.fn(() => []) } };
+		const ctx = {
+			cwd: process.cwd(),
+			hasUI: false,
+			ui: { notify, setStatus: vi.fn() },
+			sessionManager: { getBranch: vi.fn(() => []) },
+		};
 		const sessionHandlers = pi._handlers.get("session_start") ?? [];
 		await sessionHandlers.at(-1)!({}, ctx);
 
@@ -671,7 +752,13 @@ describe("extension factory", () => {
 			await runSessionStartHandlers(pi, { cwd: dir });
 
 			const readTool = pi._tools.find((tool) => tool.name === "read");
-			const result = await readTool.execute("ordinary-read", { path: "session-file.txt" }, undefined, undefined, {});
+			const result = await readTool.execute(
+				"ordinary-read",
+				{ path: "session-file.txt" },
+				undefined,
+				undefined,
+				{},
+			);
 
 			expect(result.content).toEqual([{ type: "text", text: "from session cwd\n" }]);
 		} finally {
@@ -693,7 +780,13 @@ describe("extension factory", () => {
 			await runSessionStartHandlers(pi, { cwd: secondDir });
 
 			const readTool = pi._tools.find((tool) => tool.name === "read");
-			const result = await readTool.execute("ordinary-read", { path: "session-file.txt" }, undefined, undefined, {});
+			const result = await readTool.execute(
+				"ordinary-read",
+				{ path: "session-file.txt" },
+				undefined,
+				undefined,
+				{},
+			);
 
 			expect(pi.registerTool).toHaveBeenCalledTimes(18);
 			expect(result.content).toEqual([{ type: "text", text: "from second cwd\n" }]);
@@ -719,7 +812,13 @@ describe("extension factory", () => {
 		});
 
 		const readTool = pi._tools.find((tool) => tool.name === "read");
-		const result = await readTool.execute("cursor-tool-1", { path: "README.md" }, undefined, undefined, {});
+		const result = await readTool.execute(
+			"cursor-tool-1",
+			{ path: "README.md" },
+			undefined,
+			undefined,
+			{},
+		);
 
 		expect(result).toEqual({
 			content: [{ type: "text", text: "# pi-cursor-sdk" }],
@@ -733,7 +832,13 @@ describe("extension factory", () => {
 		mockedDiscover.mockResolvedValueOnce([]);
 		const dir = mkdtempSync(join(tmpdir(), "pi-cursor-image-replay-"));
 		const imagePath = join(dir, "badge.png");
-		writeFileSync(imagePath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
+		writeFileSync(
+			imagePath,
+			Buffer.from(
+				"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+				"base64",
+			),
+		);
 		setCapabilities({ images: null, trueColor: false, hyperlinks: false });
 		try {
 			const pi = createMockPi();
@@ -743,7 +848,9 @@ describe("extension factory", () => {
 			const generateImageTool = pi._tools.find((tool) => tool.name === "cursor_generate_image");
 			const component = generateImageTool.renderResult?.(
 				{
-					content: [{ type: "text", text: `generateImage Small badge\n\nSaved image: ${imagePath}` }],
+					content: [
+						{ type: "text", text: `generateImage Small badge\n\nSaved image: ${imagePath}` },
+					],
 					details: {
 						cursorToolName: "generateImage",
 						title: "Cursor generateImage",
@@ -775,13 +882,45 @@ describe("extension factory", () => {
 		const pi = createMockPi();
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi);
-		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
+		const theme = {
+			fg: (_style: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never;
 		const cursorTool = pi._tools.find((tool) => tool.name === "cursor");
 
 		const rendered = [
-			cursorTool.renderCall?.({ activityTitle: "Cursor plan", activitySummary: "2 items", totalCount: 2 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
-			cursorTool.renderCall?.({ activityTitle: "Cursor todos", activitySummary: "1/2 completed, 1 pending", totalCount: 2 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
-			cursorTool.renderCall?.({ activityTitle: "Cursor MCP", activitySummary: "external_search", toolName: "external_search" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
+			cursorTool
+				.renderCall?.(
+					{ activityTitle: "Cursor plan", activitySummary: "2 items", totalCount: 2 },
+					theme,
+					{ isPartial: true, cwd: process.cwd() } as never,
+				)
+				?.render(120)
+				.join("\n"),
+			cursorTool
+				.renderCall?.(
+					{
+						activityTitle: "Cursor todos",
+						activitySummary: "1/2 completed, 1 pending",
+						totalCount: 2,
+					},
+					theme,
+					{ isPartial: true, cwd: process.cwd() } as never,
+				)
+				?.render(120)
+				.join("\n"),
+			cursorTool
+				.renderCall?.(
+					{
+						activityTitle: "Cursor MCP",
+						activitySummary: "external_search",
+						toolName: "external_search",
+					},
+					theme,
+					{ isPartial: true, cwd: process.cwd() } as never,
+				)
+				?.render(120)
+				.join("\n"),
 		]
 			.filter((entry): entry is string => Boolean(entry))
 			.join("\n");
@@ -803,9 +942,16 @@ describe("extension factory", () => {
 		const pi = createMockPi();
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi, {
-			model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"],
+			model: {
+				provider: "cursor",
+				api: "cursor-sdk",
+				id: "composer-2.5",
+			} as ExtensionContext["model"],
 		});
-		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
+		const theme = {
+			fg: (_style: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never;
 
 		const readTool = pi._tools.find((tool) => tool.name === "read");
 		const grepTool = pi._tools.find((tool) => tool.name === "grep");
@@ -818,27 +964,75 @@ describe("extension factory", () => {
 		for (const tool of [readTool, grepTool, findTool, bashTool, editTool, writeTool, lsTool]) {
 			expect(tool.renderShell).toBe("self");
 		}
-		expect(readTool.renderCall?.({ path: "README.md", limit: 80 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"  → Read README.md [limit=80]",
-		);
-		expect(grepTool.renderCall?.({ pattern: "foo", path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			'  ✱ Grep "foo" in src',
-		);
-		expect(findTool.renderCall?.({ pattern: "**/*.ts", path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			'  ✱ Find "**/*.ts" in src',
-		);
-		expect(bashTool.renderCall?.({ command: "npm test" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"  $ npm test",
-		);
-		expect(editTool.renderCall?.({ path: "src/index.ts" }, theme, { isPartial: true, cwd: process.cwd(), toolCallId: "ordinary-edit" } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"  ← Edit src/index.ts",
-		);
-		expect(writeTool.renderCall?.({ path: "README.md" }, theme, { isPartial: true, cwd: process.cwd(), toolCallId: "ordinary-write" } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"  ← Write README.md",
-		);
-		expect(lsTool.renderCall?.({ path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).toBe(
-			"  → List src",
-		);
+		expect(
+			readTool
+				.renderCall?.({ path: "README.md", limit: 80 }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe("  → Read README.md [limit=80]");
+		expect(
+			grepTool
+				.renderCall?.({ pattern: "foo", path: "src" }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe('  ✱ Grep "foo" in src');
+		expect(
+			findTool
+				.renderCall?.({ pattern: "**/*.ts", path: "src" }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe('  ✱ Find "**/*.ts" in src');
+		expect(
+			bashTool
+				.renderCall?.({ command: "npm test" }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe("  $ npm test");
+		expect(
+			editTool
+				.renderCall?.({ path: "src/index.ts" }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+					toolCallId: "ordinary-edit",
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe("  ← Edit src/index.ts");
+		expect(
+			writeTool
+				.renderCall?.({ path: "README.md" }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+					toolCallId: "ordinary-write",
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe("  ← Write README.md");
+		expect(
+			lsTool
+				.renderCall?.({ path: "src" }, theme, { isPartial: true, cwd: process.cwd() } as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).toBe("  → List src");
 	});
 
 	it("uses default pi tool shells for native replay when compact display is not enabled", async () => {
@@ -867,7 +1061,11 @@ describe("extension factory", () => {
 		const pi = createMockPi();
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi, {
-			model: { provider: "cursor", api: "cursor-sdk", id: "composer-2.5" } as ExtensionContext["model"],
+			model: {
+				provider: "cursor",
+				api: "cursor-sdk",
+				id: "composer-2.5",
+			} as ExtensionContext["model"],
 		});
 
 		const readTool = pi._tools.find((tool) => tool.name === "read");
@@ -888,19 +1086,37 @@ describe("extension factory", () => {
 		const pi = createMockPi();
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi, {
-			model: { provider: "opencode", api: "opencode-go", id: "kimi-k2.6" } as ExtensionContext["model"],
+			model: {
+				provider: "opencode",
+				api: "opencode-go",
+				id: "kimi-k2.6",
+			} as ExtensionContext["model"],
 		});
-		await runModelSelectHandlers(pi, { provider: "opencode", api: "opencode-go", id: "kimi-k2.6" } as ExtensionContext["model"]);
+		await runModelSelectHandlers(pi, {
+			provider: "opencode",
+			api: "opencode-go",
+			id: "kimi-k2.6",
+		} as ExtensionContext["model"]);
 
 		const readTool = pi._tools.find((tool) => tool.name === "read");
 		const cursorTool = pi._tools.find((tool) => tool.name === "cursor");
-		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
+		const theme = {
+			fg: (_style: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never;
 
 		expect(readTool.renderShell).toBeUndefined();
 		expect(cursorTool.renderShell).toBeUndefined();
-		expect(readTool.renderCall?.({ path: "README.md", limit: 80 }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n").trimEnd()).not.toBe(
-			"  → Read README.md [limit=80]",
-		);
+		expect(
+			readTool
+				.renderCall?.({ path: "README.md", limit: 80 }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+				} as never)
+				?.render(120)
+				.join("\n")
+				.trimEnd(),
+		).not.toBe("  → Read README.md [limit=80]");
 	});
 
 	it("renders legacy Cursor replay-only tool labels without raw synthetic names", async () => {
@@ -910,7 +1126,10 @@ describe("extension factory", () => {
 		const pi = createMockPi();
 		await extensionFactory(pi);
 		await runSessionStartHandlers(pi);
-		const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text } as never;
+		const theme = {
+			fg: (_style: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never;
 		const collapsedOptions = { expanded: false, isPartial: false } as never;
 		const expandedOptions = { expanded: true, isPartial: false } as never;
 		const context = { isError: false, showImages: false } as never;
@@ -923,34 +1142,65 @@ describe("extension factory", () => {
 		expect(mcpTool.renderShell).toBe("self");
 
 		const rendered = [
-			editTool.renderCall?.({ path: "src/index.ts" }, theme, { isPartial: true, cwd: process.cwd() } as never)?.render(120).join("\n"),
-			writeTool.renderResult?.(
-				{
-					content: [{ type: "text", text: "write new.txt\n\nCreated 1 lines" }],
-					details: { cursorToolName: "write", path: "new.txt", linesCreated: 1, fileSize: 6, expandedText: "Created 1 lines" },
-				},
-				expandedOptions,
-				theme,
-				context,
-			)?.render(120).join("\n"),
-			mcpTool.renderResult?.(
-				{
-					content: [{ type: "text", text: "mcp git\n\nstatus" }],
-					details: { cursorToolName: "mcp", title: "Cursor MCP activity", summary: "git", expandedText: "status" },
-				},
-				expandedOptions,
-				theme,
-				context,
-			)?.render(120).join("\n"),
-			mcpTool.renderResult?.(
-				{
-					content: [{ type: "text", text: "mcp git\n\nstatus" }],
-					details: { cursorToolName: "mcp", title: "Cursor MCP activity", summary: "git", expandedText: "status" },
-				},
-				collapsedOptions,
-				theme,
-				context,
-			)?.render(120).join("\n"),
+			editTool
+				.renderCall?.({ path: "src/index.ts" }, theme, {
+					isPartial: true,
+					cwd: process.cwd(),
+				} as never)
+				?.render(120)
+				.join("\n"),
+			writeTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "write new.txt\n\nCreated 1 lines" }],
+						details: {
+							cursorToolName: "write",
+							path: "new.txt",
+							linesCreated: 1,
+							fileSize: 6,
+							expandedText: "Created 1 lines",
+						},
+					},
+					expandedOptions,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n"),
+			mcpTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "mcp git\n\nstatus" }],
+						details: {
+							cursorToolName: "mcp",
+							title: "Cursor MCP activity",
+							summary: "git",
+							expandedText: "status",
+						},
+					},
+					expandedOptions,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n"),
+			mcpTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "mcp git\n\nstatus" }],
+						details: {
+							cursorToolName: "mcp",
+							title: "Cursor MCP activity",
+							summary: "git",
+							expandedText: "status",
+						},
+					},
+					collapsedOptions,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n"),
 		]
 			.filter((entry): entry is string => Boolean(entry))
 			.join("\n");
@@ -974,41 +1224,73 @@ describe("extension factory", () => {
 		await runSessionStartHandlers(pi);
 		const theme = {
 			fg: (style: string, text: string) =>
-				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "toolOutput"].includes(style) ? `<${style}>${text}</${style}>` : text,
+				["toolDiffAdded", "toolDiffRemoved", "toolDiffContext", "toolOutput"].includes(style)
+					? `<${style}>${text}</${style}>`
+					: text,
 			bold: (text: string) => text,
 		} as never;
 		const options = { expanded: false, isPartial: false } as never;
-		const replayContext = { isError: false, showImages: false, toolCallId: "cursor-replay-1-1-tool-1" } as never;
+		const replayContext = {
+			isError: false,
+			showImages: false,
+			toolCallId: "cursor-replay-1-1-tool-1",
+		} as never;
 
 		const editTool = pi._tools.find((tool) => tool.name === "edit");
 		const writeTool = pi._tools.find((tool) => tool.name === "write");
 		const rendered = [
-			editTool.renderCall?.({ path: "src/index.ts" }, theme, { isPartial: true, toolCallId: "cursor-replay-1-1-tool-1" } as never)?.render(120).join("\n"),
-			editTool.renderResult?.(
-				{
-					content: [{ type: "text", text: "edit src/index.ts\n\n+1 -1" }],
-					details: {
-						cursorToolName: "edit",
-						path: "src/index.ts",
-						linesAdded: 1,
-						linesRemoved: 1,
-						diff: "--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old line\n+new line",
+			editTool
+				.renderCall?.({ path: "src/index.ts" }, theme, {
+					isPartial: true,
+					toolCallId: "cursor-replay-1-1-tool-1",
+				} as never)
+				?.render(120)
+				.join("\n"),
+			editTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "edit src/index.ts\n\n+1 -1" }],
+						details: {
+							cursorToolName: "edit",
+							path: "src/index.ts",
+							linesAdded: 1,
+							linesRemoved: 1,
+							diff: "--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old line\n+new line",
+						},
 					},
-				},
-				options,
-				theme,
-				replayContext,
-			)?.render(120).join("\n"),
-			writeTool.renderCall?.({ path: "new.txt", content: "hello\n" }, theme, { isPartial: true, toolCallId: "cursor-replay-1-1-tool-2" } as never)?.render(120).join("\n"),
-			writeTool.renderResult?.(
-				{
-					content: [{ type: "text", text: "write new.txt\n\nCreated 3 lines\n\n# Title\n\nBody" }],
-					details: { cursorToolName: "write", path: "new.txt", linesCreated: 3, fileSize: 13, fileContentAfterWrite: "# Title\n\nBody\n" },
-				},
-				options,
-				theme,
-				replayContext,
-			)?.render(120).join("\n"),
+					options,
+					theme,
+					replayContext,
+				)
+				?.render(120)
+				.join("\n"),
+			writeTool
+				.renderCall?.({ path: "new.txt", content: "hello\n" }, theme, {
+					isPartial: true,
+					toolCallId: "cursor-replay-1-1-tool-2",
+				} as never)
+				?.render(120)
+				.join("\n"),
+			writeTool
+				.renderResult?.(
+					{
+						content: [
+							{ type: "text", text: "write new.txt\n\nCreated 3 lines\n\n# Title\n\nBody" },
+						],
+						details: {
+							cursorToolName: "write",
+							path: "new.txt",
+							linesCreated: 3,
+							fileSize: 13,
+							fileContentAfterWrite: "# Title\n\nBody\n",
+						},
+					},
+					options,
+					theme,
+					replayContext,
+				)
+				?.render(120)
+				.join("\n"),
 		]
 			.filter((entry): entry is string => Boolean(entry))
 			.join("\n");
@@ -1045,58 +1327,77 @@ describe("extension factory", () => {
 		const context = { isError: false, showImages: false } as never;
 
 		const todosTool = pi._tools.find((tool) => tool.name === "cursor_update_todos");
-		const todosRendered = todosTool.renderResult?.(
-			{
-				content: [{ type: "text", text: "updateTodos\n\n✓ Demo TodoWrite tool output (completed)\n… Run remaining Cursor tools once (inProgress)" }],
-				details: {
-					cursorToolName: "updateTodos",
-					title: "Cursor todos",
-					summary: "1/2 completed, 1 in progress",
-					expandedText: "updateTodos\n\n✓ Demo TodoWrite tool output (completed)\n… Run remaining Cursor tools once (inProgress)",
-				},
-			},
-			options,
-			theme,
-			context,
-		)?.render(120).join("\n") ?? "";
+		const todosRendered =
+			todosTool
+				.renderResult?.(
+					{
+						content: [
+							{
+								type: "text",
+								text: "updateTodos\n\n✓ Demo TodoWrite tool output (completed)\n… Run remaining Cursor tools once (inProgress)",
+							},
+						],
+						details: {
+							cursorToolName: "updateTodos",
+							title: "Cursor todos",
+							summary: "1/2 completed, 1 in progress",
+							expandedText:
+								"updateTodos\n\n✓ Demo TodoWrite tool output (completed)\n… Run remaining Cursor tools once (inProgress)",
+						},
+					},
+					options,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n") ?? "";
 		expect(todosRendered).toContain("Demo TodoWrite tool output");
 		expect(todosRendered).toContain("Run remaining Cursor tools once");
 
 		const taskTool = pi._tools.find((tool) => tool.name === "cursor_task");
-		const taskRendered = taskTool.renderResult?.(
-			{
-				content: [{ type: "text", text: "task Quick repo file count\n\n20" }],
-				details: {
-					cursorToolName: "task",
-					title: "Cursor task",
-					summary: "Quick repo file count: 20",
-					expandedText: "task Quick repo file count\n\n20",
-				},
-			},
-			options,
-			theme,
-			context,
-		)?.render(120).join("\n") ?? "";
+		const taskRendered =
+			taskTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "task Quick repo file count\n\n20" }],
+						details: {
+							cursorToolName: "task",
+							title: "Cursor task",
+							summary: "Quick repo file count: 20",
+							expandedText: "task Quick repo file count\n\n20",
+						},
+					},
+					options,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n") ?? "";
 		expect(taskRendered).toContain("✓");
 		expect(taskRendered).toContain("Quick repo file count");
 		expect(taskRendered).toContain("20");
 
 		const editTool = pi._tools.find((tool) => tool.name === "cursor_edit");
-		const editRendered = editTool.renderResult?.(
-			{
-				content: [{ type: "text", text: "edit src/index.ts\n\n+1 -1" }],
-				details: {
-					cursorToolName: "edit",
-					path: "src/index.ts",
-					linesAdded: 1,
-					linesRemoved: 1,
-					diffString: "--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old line\n+new line",
-				},
-			},
-			options,
-			theme,
-			context,
-		)?.render(120).join("\n") ?? "";
+		const editRendered =
+			editTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "edit src/index.ts\n\n+1 -1" }],
+						details: {
+							cursorToolName: "edit",
+							path: "src/index.ts",
+							linesAdded: 1,
+							linesRemoved: 1,
+							diffString:
+								"--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-old line\n+new line",
+						},
+					},
+					options,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n") ?? "";
 		expect(editRendered).toContain("<dim>← </dim>Edit");
 		expect(editRendered).toContain("src/index.ts");
 		expect(editRendered).not.toContain("Cursor updated");
@@ -1108,21 +1409,26 @@ describe("extension factory", () => {
 		expect(editRendered).not.toContain("@@");
 		expect(editRendered).not.toContain("expand for diff");
 
-		const createRendered = editTool.renderResult?.(
-			{
-				content: [{ type: "text", text: "edit new.txt\n\n+2 -1" }],
-				details: {
-					cursorToolName: "edit",
-					path: "new.txt",
-					linesAdded: 2,
-					linesRemoved: 1,
-					diffString: "--- /dev/null\n+++ b/new.txt\n@@ -1 +1,2 @@\n-\n+first line\n+second line",
-				},
-			},
-			options,
-			theme,
-			context,
-		)?.render(120).join("\n") ?? "";
+		const createRendered =
+			editTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "edit new.txt\n\n+2 -1" }],
+						details: {
+							cursorToolName: "edit",
+							path: "new.txt",
+							linesAdded: 2,
+							linesRemoved: 1,
+							diffString:
+								"--- /dev/null\n+++ b/new.txt\n@@ -1 +1,2 @@\n-\n+first line\n+second line",
+						},
+					},
+					options,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n") ?? "";
 		expect(createRendered).toContain("<dim>← </dim>Edit");
 		expect(createRendered).toContain("new.txt");
 		expect(createRendered).not.toContain("Cursor created");
@@ -1133,24 +1439,30 @@ describe("extension factory", () => {
 		expect(createRendered).not.toContain("@@");
 
 		const neutralPathOnlyEditTool = pi._tools.find((tool) => tool.name === "cursor");
-		const neutralPathOnlyEditRendered = neutralPathOnlyEditTool.renderResult?.(
-			{
-				content: [{ type: "text", text: "edit .tool-demo/ux-demo.ts\n\n+1 -1" }],
-				details: {
-					cursorToolName: "edit",
-					title: "Cursor edit",
-					summary: ".tool-demo/ux-demo.ts",
-					path: ".tool-demo/ux-demo.ts",
-					linesAdded: 1,
-					linesRemoved: 1,
-					diffString: "--- a/.tool-demo/ux-demo.ts\n+++ b/.tool-demo/ux-demo.ts\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;",
-					expandedText: "edit .tool-demo/ux-demo.ts\n\n+1 -1\n\n--- a/.tool-demo/ux-demo.ts\n+++ b/.tool-demo/ux-demo.ts\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;",
-				},
-			},
-			options,
-			theme,
-			context,
-		)?.render(120).join("\n") ?? "";
+		const neutralPathOnlyEditRendered =
+			neutralPathOnlyEditTool
+				.renderResult?.(
+					{
+						content: [{ type: "text", text: "edit .tool-demo/ux-demo.ts\n\n+1 -1" }],
+						details: {
+							cursorToolName: "edit",
+							title: "Cursor edit",
+							summary: ".tool-demo/ux-demo.ts",
+							path: ".tool-demo/ux-demo.ts",
+							linesAdded: 1,
+							linesRemoved: 1,
+							diffString:
+								"--- a/.tool-demo/ux-demo.ts\n+++ b/.tool-demo/ux-demo.ts\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;",
+							expandedText:
+								"edit .tool-demo/ux-demo.ts\n\n+1 -1\n\n--- a/.tool-demo/ux-demo.ts\n+++ b/.tool-demo/ux-demo.ts\n@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;",
+						},
+					},
+					options,
+					theme,
+					context,
+				)
+				?.render(120)
+				.join("\n") ?? "";
 		expect(neutralPathOnlyEditRendered).toContain("<dim>← </dim>Edit");
 		expect(neutralPathOnlyEditRendered).toContain(".tool-demo/ux-demo.ts");
 		expect(neutralPathOnlyEditRendered).toContain("<toolDiffRemoved>-</toolDiffRemoved>");
@@ -1176,9 +1488,9 @@ describe("extension factory", () => {
 		});
 
 		const bashTool = pi._tools.find((tool) => tool.name === "bash");
-		await expect(bashTool.execute("cursor-tool-error", { command: "exit 7" }, undefined, undefined, {})).rejects.toThrow(
-			"Command exited with code 7",
-		);
+		await expect(
+			bashTool.execute("cursor-tool-error", { command: "exit 7" }, undefined, undefined, {}),
+		).rejects.toThrow("Command exited with code 7");
 	});
 
 	it("does not register native Cursor tool wrappers when native display is disabled", async () => {
@@ -1267,19 +1579,34 @@ describe("extension factory", () => {
 				name: "read",
 				description: "compact read",
 				parameters: Type.Object({}),
-				sourceInfo: { source: "extension", path: compactExtensionPath, scope: "user", origin: "top-level" },
+				sourceInfo: {
+					source: "extension",
+					path: compactExtensionPath,
+					scope: "user",
+					origin: "top-level",
+				},
 			},
 			{
 				name: "grep",
 				description: "compact grep",
 				parameters: Type.Object({}),
-				sourceInfo: { source: "extension", path: compactExtensionPath, scope: "user", origin: "top-level" },
+				sourceInfo: {
+					source: "extension",
+					path: compactExtensionPath,
+					scope: "user",
+					origin: "top-level",
+				},
 			},
 			{
 				name: "find",
 				description: "compact find",
 				parameters: Type.Object({}),
-				sourceInfo: { source: "extension", path: compactExtensionPath, scope: "user", origin: "top-level" },
+				sourceInfo: {
+					source: "extension",
+					path: compactExtensionPath,
+					scope: "user",
+					origin: "top-level",
+				},
 			},
 			createBuiltinToolInfo("bash"),
 			createBuiltinToolInfo("edit"),

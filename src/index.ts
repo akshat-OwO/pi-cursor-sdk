@@ -1,29 +1,41 @@
-import type { ExtensionAPI, ExtensionContext, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { discoverModels, loadCachedCursorModels, type CursorModelFallbackIssue } from "./model-discovery.js";
-import { registerCursorNativeToolDisplay } from "./cursor-native-tool-display.js";
-import { registerCursorPiToolBridge } from "./cursor-pi-tool-bridge.js";
-import { registerCursorQuestionTool } from "./cursor-question-tool.js";
-import { registerCursorSessionCwd } from "./cursor-session-cwd.js";
-import { registerCursorSessionAgent } from "./cursor-session-agent.js";
-import { registerCursorTaskWidget } from "./cursor-task-widget-registration.js";
-import { registerCursorSettingsCommand } from "./cursor-settings-command.js";
-import { streamCursor } from "./cursor-provider.js";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	ProviderConfig,
+	ProviderModelConfig,
+} from "@earendil-works/pi-coding-agent";
+import {
+	discoverModels,
+	loadCachedCursorModels,
+	type CursorModelFallbackIssue,
+} from "./discovery/model-discovery.js";
+import { registerCursorNativeToolDisplay } from "./replay/cursor-native-tool-display.js";
+import { registerCursorPiToolBridge } from "./bridge/cursor-pi-tool-bridge.js";
+import { registerCursorQuestionTool } from "./bridge/cursor-question-tool.js";
+import { registerCursorSessionCwd } from "./session/cursor-session-cwd.js";
+import { registerCursorSessionAgent } from "./session/cursor-session-agent.js";
+import { registerCursorTaskWidget } from "./task/cursor-task-widget-registration.js";
+import { registerCursorSettingsCommand } from "./settings/cursor-settings-command.js";
+import { streamCursor } from "./provider/cursor-provider.js";
 
-type CursorExtensionApi =
-	& Pick<ExtensionAPI, "registerProvider">
-	& {
-		registerCommand(name: string, options: {
+type CursorExtensionApi = Pick<ExtensionAPI, "registerProvider"> & {
+	registerCommand(
+		name: string,
+		options: {
 			description?: string;
-			handler: (args: string, ctx: Pick<ExtensionContext, "hasUI"> & { ui: Pick<ExtensionContext["ui"], "notify"> }) => Promise<void> | void;
-		}): void;
-	}
-	& Parameters<typeof registerCursorSessionCwd>[0]
-	& Parameters<typeof registerCursorSessionAgent>[0]
-	& Parameters<typeof registerCursorNativeToolDisplay>[0]
-	& Parameters<typeof registerCursorQuestionTool>[0]
-	& Parameters<typeof registerCursorTaskWidget>[0]
-	& Parameters<typeof registerCursorPiToolBridge>[0]
-	& Parameters<typeof registerCursorSettingsCommand>[0];
+			handler: (
+				args: string,
+				ctx: Pick<ExtensionContext, "hasUI"> & { ui: Pick<ExtensionContext["ui"], "notify"> },
+			) => Promise<void> | void;
+		},
+	): void;
+} & Parameters<typeof registerCursorSessionCwd>[0] &
+	Parameters<typeof registerCursorSessionAgent>[0] &
+	Parameters<typeof registerCursorNativeToolDisplay>[0] &
+	Parameters<typeof registerCursorQuestionTool>[0] &
+	Parameters<typeof registerCursorTaskWidget>[0] &
+	Parameters<typeof registerCursorPiToolBridge>[0] &
+	Parameters<typeof registerCursorSettingsCommand>[0];
 
 function createCursorProviderConfig(models: ProviderModelConfig[]): ProviderConfig {
 	return {
@@ -40,11 +52,17 @@ function isStaleExtensionContextError(error: unknown): boolean {
 	return error instanceof Error && error.message.includes("extension ctx is stale");
 }
 
-function registerCursorProvider(pi: Pick<ExtensionAPI, "registerProvider">, models: ProviderModelConfig[]): void {
+function registerCursorProvider(
+	pi: Pick<ExtensionAPI, "registerProvider">,
+	models: ProviderModelConfig[],
+): void {
 	pi.registerProvider("cursor", createCursorProviderConfig(models));
 }
 
-function registerCursorProviderSafely(pi: Pick<ExtensionAPI, "registerProvider">, models: ProviderModelConfig[]): boolean {
+function registerCursorProviderSafely(
+	pi: Pick<ExtensionAPI, "registerProvider">,
+	models: ProviderModelConfig[],
+): boolean {
 	try {
 		registerCursorProvider(pi, models);
 		return true;
@@ -54,9 +72,7 @@ function registerCursorProviderSafely(pi: Pick<ExtensionAPI, "registerProvider">
 	}
 }
 
-function scheduleBackgroundModelRefresh(
-	pi: Pick<ExtensionAPI, "registerProvider" | "on">,
-): void {
+function scheduleBackgroundModelRefresh(pi: Pick<ExtensionAPI, "registerProvider" | "on">): void {
 	let cancelled = false;
 	pi.on("session_shutdown", () => {
 		cancelled = true;
@@ -83,11 +99,13 @@ export default async function (pi: CursorExtensionApi) {
 	registerCursorSettingsCommand(pi);
 	let fallbackIssue: CursorModelFallbackIssue | undefined;
 	const cachedModels = loadCachedCursorModels();
-	const models = cachedModels ?? await discoverModels({
-		onFallback: (issue) => {
-			fallbackIssue = issue;
-		},
-	});
+	const models =
+		cachedModels ??
+		(await discoverModels({
+			onFallback: (issue) => {
+				fallbackIssue = issue;
+			},
+		}));
 
 	if (fallbackIssue) {
 		const issue = fallbackIssue;
@@ -112,9 +130,15 @@ export default async function (pi: CursorExtensionApi) {
 			if (!registerCursorProviderSafely(pi, refreshedModels)) return;
 			if (!ctx.hasUI) return;
 			if (refreshFallbackIssue) {
-				ctx.ui.notify(`Cursor model catalog refresh still using fallback models: ${refreshFallbackIssue.message}`, "warning");
+				ctx.ui.notify(
+					`Cursor model catalog refresh still using fallback models: ${refreshFallbackIssue.message}`,
+					"warning",
+				);
 			} else {
-				ctx.ui.notify(`Cursor model catalog refreshed with ${refreshedModels.length} model${refreshedModels.length === 1 ? "" : "s"}.`, "info");
+				ctx.ui.notify(
+					`Cursor model catalog refreshed with ${refreshedModels.length} model${refreshedModels.length === 1 ? "" : "s"}.`,
+					"info",
+				);
 			}
 		},
 	});

@@ -8,8 +8,13 @@ import {
 	CURSOR_IMAGE_TOKEN_ESTIMATE,
 	estimateCursorContextTokens,
 	estimateCursorPromptMessageTokens,
-} from "../src/context.js";
-import type { Context, UserMessage, AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
+} from "../src/context/context.js";
+import type {
+	Context,
+	UserMessage,
+	AssistantMessage,
+	ToolResultMessage,
+} from "@earendil-works/pi-ai";
 
 describe("buildCursorPrompt", () => {
 	it("includes system prompt", () => {
@@ -71,7 +76,23 @@ describe("buildCursorPrompt", () => {
 		const ctx: Context = {
 			messages: [
 				{ role: "user", content: "Hello", timestamp: 1 } satisfies UserMessage,
-				{ role: "assistant", content: [{ type: "text", text: "Hi there" }], api: "cursor-sdk", provider: "cursor", model: "test", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 } satisfies AssistantMessage,
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "Hi there" }],
+					api: "cursor-sdk",
+					provider: "cursor",
+					model: "test",
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: "stop",
+					timestamp: 2,
+				} satisfies AssistantMessage,
 			],
 		};
 		const result = buildCursorPrompt(ctx);
@@ -89,7 +110,14 @@ describe("buildCursorPrompt", () => {
 					api: "cursor-sdk",
 					provider: "cursor",
 					model: "test",
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
 					stopReason: "stop",
 					timestamp: 2,
 				},
@@ -109,9 +137,19 @@ describe("buildCursorPrompt", () => {
 						{ type: "thinking", thinking: "internal thought" },
 						{ type: "text", text: "Final answer" },
 					],
-					api: "cursor-sdk", provider: "cursor", model: "test",
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-					stopReason: "stop", timestamp: 2,
+					api: "cursor-sdk",
+					provider: "cursor",
+					model: "test",
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: "stop",
+					timestamp: 2,
 				} satisfies AssistantMessage,
 			],
 		};
@@ -168,14 +206,36 @@ describe("buildCursorPrompt", () => {
 					role: "assistant",
 					content: [
 						{ type: "text", text: "I will preserve literal cursor_delete text." },
-						{ type: "toolCall", id: "edit-call", name: "cursor_edit", arguments: { note: "cursor_write" } },
-						{ type: "toolCall", id: "mcp-call", name: "cursor_mcp", arguments: { toolName: "git" } },
-						{ type: "toolCall", id: "bash-call", name: "bash", arguments: { command: "echo cursor_mcp" } },
+						{
+							type: "toolCall",
+							id: "edit-call",
+							name: "cursor_edit",
+							arguments: { note: "cursor_write" },
+						},
+						{
+							type: "toolCall",
+							id: "mcp-call",
+							name: "cursor_mcp",
+							arguments: { toolName: "git" },
+						},
+						{
+							type: "toolCall",
+							id: "bash-call",
+							name: "bash",
+							arguments: { command: "echo cursor_mcp" },
+						},
 					],
 					api: "cursor-sdk",
 					provider: "cursor",
 					model: "test",
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
 					stopReason: "toolUse",
 					timestamp: 1,
 				} satisfies AssistantMessage,
@@ -205,9 +265,15 @@ describe("buildCursorPrompt", () => {
 		expect(result.text).toContain("Tool call (Cursor edit, call edit-call)");
 		expect(result.text).toContain('{"note":"cursor_write"}');
 		expect(result.text).toContain("Tool call (Cursor MCP, call mcp-call):");
-		expect(result.text).toContain('Tool call (bash, call bash-call): {"command":"echo cursor_mcp"}');
-		expect(result.text).toContain("Tool result (Cursor edit, call edit-call): legacy cursor_edit result");
-		expect(result.text).toContain("Tool result (Cursor write, call write-call): legacy cursor_mcp text");
+		expect(result.text).toContain(
+			'Tool call (bash, call bash-call): {"command":"echo cursor_mcp"}',
+		);
+		expect(result.text).toContain(
+			"Tool result (Cursor edit, call edit-call): legacy cursor_edit result",
+		);
+		expect(result.text).toContain(
+			"Tool result (Cursor write, call write-call): legacy cursor_mcp text",
+		);
 		expect(result.text).not.toContain("Tool call (cursor_edit");
 		expect(result.text).not.toContain("Tool call (cursor_mcp");
 		expect(result.text).not.toContain("Tool result (cursor_write");
@@ -224,13 +290,23 @@ describe("buildCursorPrompt", () => {
 			api: "cursor-sdk",
 			provider: "cursor",
 			model: "test",
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
 			stopReason: "toolUse",
 			timestamp: 2,
 		} satisfies AssistantMessage;
 
-		const expected = 'Assistant: I will inspect the directory.\nTool call (bash, call tc1): {"command":"ls"}';
-		expect(estimateCursorPromptMessageTokens(assistant, { charsPerToken: 1 })).toBe(expected.length);
+		const expected =
+			'Assistant: I will inspect the directory.\nTool call (bash, call tc1): {"command":"ls"}';
+		expect(estimateCursorPromptMessageTokens(assistant, { charsPerToken: 1 })).toBe(
+			expected.length,
+		);
 		expect(expected).not.toContain("hidden reasoning");
 	});
 
@@ -244,7 +320,9 @@ describe("buildCursorPrompt", () => {
 			timestamp: 3,
 		} satisfies ToolResultMessage;
 
-		expect(estimateCursorPromptMessageTokens(toolResult, { charsPerToken: 1 })).toBe("Tool result (bash, call tc1): README.md".length);
+		expect(estimateCursorPromptMessageTokens(toolResult, { charsPerToken: 1 })).toBe(
+			"Tool result (bash, call tc1): README.md".length,
+		);
 	});
 
 	it("estimates tool-result image prompt content as the replay placeholder text", () => {
@@ -276,12 +354,18 @@ describe("buildCursorPrompt", () => {
 				} satisfies UserMessage,
 			],
 		};
-		const options = { maxInputTokens: 80, charsPerToken: 1, imageTokenEstimate: CURSOR_IMAGE_TOKEN_ESTIMATE };
+		const options = {
+			maxInputTokens: 80,
+			charsPerToken: 1,
+			imageTokenEstimate: CURSOR_IMAGE_TOKEN_ESTIMATE,
+		};
 		const prompt = buildCursorPrompt(ctx, options);
 
 		expect(prompt.text).not.toContain("old ");
 		expect(prompt.images).toHaveLength(1);
-		expect(estimateCursorContextTokens(ctx, options)).toBe(prompt.text.length + CURSOR_IMAGE_TOKEN_ESTIMATE);
+		expect(estimateCursorContextTokens(ctx, options)).toBe(
+			prompt.text.length + CURSOR_IMAGE_TOKEN_ESTIMATE,
+		);
 	});
 
 	it("formats assistant tool calls before tool results", () => {
@@ -297,7 +381,14 @@ describe("buildCursorPrompt", () => {
 					api: "cursor-sdk",
 					provider: "cursor",
 					model: "test",
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
 					stopReason: "toolUse",
 					timestamp: 2,
 				} satisfies AssistantMessage,
@@ -312,7 +403,9 @@ describe("buildCursorPrompt", () => {
 			],
 		};
 		const result = buildCursorPrompt(ctx);
-		expect(result.text).toContain("Assistant: I will inspect the directory.\nTool call (bash, call tc1): {\"command\":\"ls\"}");
+		expect(result.text).toContain(
+			'Assistant: I will inspect the directory.\nTool call (bash, call tc1): {"command":"ls"}',
+		);
 		expect(result.text).toContain("Tool result (bash, call tc1): README.md");
 	});
 
@@ -343,7 +436,9 @@ describe("buildCursorPrompt", () => {
 	});
 
 	it("explains that only latest user images are available as image bytes", () => {
-		const result = buildCursorPrompt({ messages: [{ role: "user", content: "test", timestamp: 1 }] });
+		const result = buildCursorPrompt({
+			messages: [{ role: "user", content: "test", timestamp: 1 }],
+		});
 		expect(result.text).toContain("only latest user images are sent");
 		expect(result.text).toContain("ask to reattach or describe prior images");
 	});
@@ -375,14 +470,25 @@ describe("buildCursorPrompt", () => {
 		const ctx: Context = {
 			systemPrompt: "Always preserve this system instruction.",
 			messages: [
-				{ role: "user", content: `old request ${"x".repeat(200)}`, timestamp: 1 } satisfies UserMessage,
+				{
+					role: "user",
+					content: `old request ${"x".repeat(200)}`,
+					timestamp: 1,
+				} satisfies UserMessage,
 				{
 					role: "assistant",
 					content: [{ type: "text", text: `old answer ${"y".repeat(200)}` }],
 					api: "cursor-sdk",
 					provider: "cursor",
 					model: "test",
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
 					stopReason: "stop",
 					timestamp: 2,
 				} satisfies AssistantMessage,
@@ -395,7 +501,9 @@ describe("buildCursorPrompt", () => {
 		expect(result.text).toContain("Always preserve this system instruction.");
 		expect(result.text).toContain("User: latest request must stay");
 		expect(result.text).toContain("Answer the latest user request");
-		expect(result.text).toContain("[Earlier transcript omitted: 2 messages to fit Cursor context budget]");
+		expect(result.text).toContain(
+			"[Earlier transcript omitted: 2 messages to fit Cursor context budget]",
+		);
 		expect(result.text).not.toContain("old request");
 		expect(result.text).not.toContain("old answer");
 	});
@@ -403,7 +511,11 @@ describe("buildCursorPrompt", () => {
 	it("keeps recent transcript messages that fit the budget", () => {
 		const ctx: Context = {
 			messages: [
-				{ role: "user", content: `old request ${"x".repeat(3000)}`, timestamp: 1 } satisfies UserMessage,
+				{
+					role: "user",
+					content: `old request ${"x".repeat(3000)}`,
+					timestamp: 1,
+				} satisfies UserMessage,
 				{ role: "user", content: "recent request", timestamp: 2 } satisfies UserMessage,
 				{
 					role: "toolResult",
@@ -445,7 +557,9 @@ describe("buildCursorPrompt", () => {
 
 		expect(result.text).toContain("User: latest request");
 		expect(result.text).toContain("User: recent request");
-		expect(result.text).toContain("[Earlier transcript omitted: 1 message to fit Cursor context budget]");
+		expect(result.text).toContain(
+			"[Earlier transcript omitted: 1 message to fit Cursor context budget]",
+		);
 		expect(result.text).not.toContain("large output");
 	});
 
@@ -460,21 +574,35 @@ describe("buildCursorPrompt", () => {
 	it("instructs Cursor not to claim web search without an actual Cursor web tool", () => {
 		const ctx: Context = {
 			systemPrompt: "You can use WebSearch and WebFetch.",
-			messages: [{ role: "user", content: "search the web for Cursor SDK best practices", timestamp: 1 }],
+			messages: [
+				{ role: "user", content: "search the web for Cursor SDK best practices", timestamp: 1 },
+			],
 		};
 		const result = buildCursorPrompt(ctx);
-		expect(result.text.indexOf("Cursor SDK tool boundary:")).toBeLessThan(result.text.indexOf("System instructions from pi:"));
-		expect(result.text).toContain("Pi tool names, replay tool names, and transcript tool names are context only");
-		expect(result.text).toContain("pi__* names are live Cursor MCP bridge tool names only when exposed in the current run");
-		expect(result.text).toContain("Call the pi__* MCP tool name, not the real pi tool name shown in pi history or transcripts");
+		expect(result.text.indexOf("Cursor SDK tool boundary:")).toBeLessThan(
+			result.text.indexOf("System instructions from pi:"),
+		);
+		expect(result.text).toContain(
+			"Pi tool names, replay tool names, and transcript tool names are context only",
+		);
+		expect(result.text).toContain(
+			"pi__* names are live Cursor MCP bridge tool names only when exposed in the current run",
+		);
+		expect(result.text).toContain(
+			"Call the pi__* MCP tool name, not the real pi tool name shown in pi history or transcripts",
+		);
 		expect(result.text).toContain("Bridged calls execute through normal pi tool flow");
-		expect(result.text).toContain("Cursor-native host tools, settings, plugins, and configured MCP servers are separate from the pi bridge");
+		expect(result.text).toContain(
+			"Cursor-native host tools, settings, plugins, and configured MCP servers are separate from the pi bridge",
+		);
 		expect(result.text).toContain("do not claim access to pi-side tools from the system prompt");
 		expect(result.text).toContain("do not claim WebSearch/WebFetch unless Cursor executes them");
 		expect(result.text).not.toContain("do not use SwitchMode");
 		expect(result.text).not.toContain("do not execute every Cursor tool");
 		expect(result.text).toContain("replay is display-only and not a capability to invoke");
-		expect(result.text).toContain("use Cursor web/search/browser/MCP or say web search is not configured");
+		expect(result.text).toContain(
+			"use Cursor web/search/browser/MCP or say web search is not configured",
+		);
 	});
 });
 
@@ -498,14 +626,33 @@ describe("buildCursorSendPrompt", () => {
 			systemPrompt: "Be helpful.",
 			messages: [
 				{ role: "user", content: "Hello", timestamp: 1 },
-				{ role: "assistant", content: [{ type: "text", text: "Hi" }], api: "cursor-sdk", provider: "cursor", model: "test", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 },
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "Hi" }],
+					api: "cursor-sdk",
+					provider: "cursor",
+					model: "test",
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: "stop",
+					timestamp: 2,
+				},
 			],
 		};
 		const context: Context = {
 			systemPrompt: "Be helpful.",
 			messages: [...priorContext.messages, { role: "user", content: "Follow up", timestamp: 3 }],
 		};
-		const sendState = { bootstrapped: true, contextFingerprint: computeCursorContextFingerprint(priorContext) };
+		const sendState = {
+			bootstrapped: true,
+			contextFingerprint: computeCursorContextFingerprint(priorContext),
+		};
 
 		const { prompt, bootstrap } = buildCursorSendPrompt(context, {}, sendState);
 
@@ -525,7 +672,23 @@ describe("buildCursorSendPrompt", () => {
 			contextFingerprint: computeCursorContextFingerprint({
 				messages: [
 					{ role: "user", content: "Hello", timestamp: 1 },
-					{ role: "assistant", content: [{ type: "text", text: "Hi" }], api: "cursor-sdk", provider: "cursor", model: "test", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 },
+					{
+						role: "assistant",
+						content: [{ type: "text", text: "Hi" }],
+						api: "cursor-sdk",
+						provider: "cursor",
+						model: "test",
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "stop",
+						timestamp: 2,
+					},
 				],
 			}),
 		};
@@ -541,7 +704,10 @@ describe("buildCursorSendPrompt", () => {
 		const editedContext: Context = {
 			messages: [{ role: "user", content: "Hello edited", timestamp: 1 }],
 		};
-		const sendState = { bootstrapped: true, contextFingerprint: computeCursorContextFingerprint(priorContext) };
+		const sendState = {
+			bootstrapped: true,
+			contextFingerprint: computeCursorContextFingerprint(priorContext),
+		};
 
 		expect(shouldBootstrapCursorSend(sendState, editedContext)).toBe(true);
 		expect(buildCursorSendPrompt(editedContext, {}, sendState).bootstrap).toBe(true);
@@ -553,7 +719,9 @@ describe("buildCursorSendPrompt", () => {
 			messages: [{ role: "user", content: "Follow up", timestamp: 3 }],
 		});
 		expect(incremental.text).not.toContain("Cursor SDK tool boundary:");
-		expect(incremental.text).toContain("Continue the conversation using Cursor SDK capabilities only");
+		expect(incremental.text).toContain(
+			"Continue the conversation using Cursor SDK capabilities only",
+		);
 	});
 
 	it("preserves the latest user request in incremental prompts under budget pressure", () => {
@@ -604,7 +772,10 @@ describe("buildCursorSendPrompt", () => {
 				} as Context["messages"][number],
 			],
 		};
-		const sendState = { bootstrapped: true, contextFingerprint: computeCursorContextFingerprint(priorContext) };
+		const sendState = {
+			bootstrapped: true,
+			contextFingerprint: computeCursorContextFingerprint(priorContext),
+		};
 
 		expect(shouldBootstrapCursorSend(sendState, treeContext)).toBe(true);
 		expect(buildCursorSendPrompt(treeContext, {}, sendState).bootstrap).toBe(true);
