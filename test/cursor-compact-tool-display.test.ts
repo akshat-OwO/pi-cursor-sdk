@@ -13,6 +13,7 @@ import {
 	formatCompactReadCall,
 	formatCompactWriteCall,
 	renderCompactFileMutationBlock,
+	renderCompactCursorReplayResult,
 	renderCompactNativeToolCall,
 	renderCompactNativeToolResult,
 } from "../src/cursor-compact-tool-display.js";
@@ -223,6 +224,30 @@ describe("cursor-compact-tool-display", () => {
 		expect(joined.split("$ false").length - 1).toBe(1);
 	});
 
+	it("renders compact cursor task results with subagent output", () => {
+		const collapsedTask = renderCompactCursorReplayResult(
+			"cursor_task",
+			{
+				content: [{ type: "text", text: "agent output line 1\nagent output line 2" }],
+				details: {
+					cursorToolName: "task",
+					description: "Explore repo",
+					expandedText: "agent output line 1\nagent output line 2",
+					durationMs: 2500,
+				},
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { description: "Explore repo" } },
+			false,
+			() => undefined,
+		);
+		const rendered = collapsedTask.render(120).join("\n");
+		expect(rendered).toContain("Explore repo");
+		expect(rendered).toContain("agent output line 1");
+		expect(rendered).not.toBe("");
+	});
+
 	it("strips bash status suffixes and parses exit codes for compact errors", () => {
 		expect(parseCompactBashExitCode("stdout\n\nCommand exited with code 2")).toBe(2);
 		expect(stripCompactBashStatusSuffix("stdout\n\nCommand exited with code 2")).toBe("stdout");
@@ -232,6 +257,29 @@ describe("cursor-compact-tool-display", () => {
 		});
 		expect(preview).toHaveLength(2);
 		expect(preview[0]?.text).toBe("one");
+	});
+
+	it("renders expanded read images through compact display", () => {
+		const tinyPng =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+		const expandedImage = renderCompactNativeToolResult(
+			"read",
+			{
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", data: tinyPng, mimeType: "image/png" },
+				],
+			},
+			{ expanded: true, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
+			false,
+			() => () => new Text("fallback should not run", 0, 0),
+		);
+		const rendered = expandedImage.render(120).join("\n");
+		expect(rendered).toContain("→ Read badge.png");
+		expect(rendered).not.toContain("fallback should not run");
+		expect(rendered).not.toContain("[image loaded — expand to view]");
 	});
 
 	it("shows a collapsed image hint for read results with image content", () => {

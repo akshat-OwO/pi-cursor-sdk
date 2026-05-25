@@ -1,8 +1,12 @@
 // Keep compact formatting in sync with ~/.pi/agent/extensions/compact-tool-display/compact-render.ts.
-import { Container, Text, type Component } from "@earendil-works/pi-tui";
+import { Container, Image, Text, type Component } from "@earendil-works/pi-tui";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { CursorReplayRenderTheme } from "./cursor-native-tool-display-replay.js";
-import { getCursorTaskReplayDescription, isCursorTaskReplayContext } from "./cursor-task-display.js";
+import {
+	getCursorTaskReplayDescription,
+	isCursorTaskReplayContext,
+	renderCursorTaskResult,
+} from "./cursor-task-display.js";
 import { isCursorTaskDisplayEnabled } from "./cursor-task-ui.js";
 import {
 	CURSOR_REPLAY_ACTIVITY_TOOL_NAME,
@@ -422,6 +426,60 @@ export function countCompactLsEntries(result: CompactToolResult): number {
 	}).length;
 }
 
+function getCompactImageContentEntry(result: CompactToolResult): { data: string; mimeType: string } | undefined {
+	for (const entry of result.content) {
+		if (entry.type === "image" && typeof entry.data === "string" && typeof entry.mimeType === "string") {
+			return { data: entry.data, mimeType: entry.mimeType };
+		}
+	}
+	return undefined;
+}
+
+function renderCompactImageReadResult(
+	result: CompactToolResult,
+	theme: CompactToolTheme,
+	context: Parameters<NonNullable<ToolDefinition["renderResult"]>>[3],
+	isError: boolean,
+): Component {
+	const image = getCompactImageContentEntry(result);
+	if (!image) return new Text("", 0, 0);
+	const args =
+		context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined;
+	const callLine = buildCompactNativeCallLine("read", args, theme, context.cwd, result, context, isError);
+	const caption = getCompactResultText(result).trim();
+	const header = caption
+		? `${withCompactPadding(callLine)}\n${withCompactPadding(theme.fg("dim", caption))}`
+		: withCompactPadding(callLine);
+	const textComponent = new Text(header, 0, 0);
+	const imageComponent = new Image(
+		image.data,
+		image.mimeType,
+		{ fallbackColor: (value) => theme.fg("muted", value) },
+		{ maxWidthCells: 40, maxHeightCells: 16 },
+	);
+	return {
+		render: (width: number) => [...textComponent.render(width), ...imageComponent.render(width)],
+		invalidate: () => {
+			textComponent.invalidate();
+			imageComponent.invalidate();
+		},
+	};
+}
+
+function shouldUseCompactCursorReplayBodyRenderer(
+	toolName: CursorReplayToolName,
+	result: CompactToolResult,
+	args: Record<string, unknown> | undefined,
+	details: ReturnType<typeof asCursorReplayToolDetails>,
+): boolean {
+	if (isCursorTaskDisplayEnabled() && (toolName === "cursor_task" || isCursorTaskReplayContext(args, details))) {
+		return true;
+	}
+	if (details?.cursorToolName === "task" || details?.cursorToolName === "generateImage") return true;
+	if (typeof details?.expandedText === "string" && details.expandedText.trim()) return true;
+	return getCompactResultText(result).includes("\n");
+}
+
 function getCompactBashDurationMs(context: CompactToolRenderContext): number | undefined {
 	const state = context.state as { startedAt?: number; endedAt?: number } | undefined;
 	if (state?.startedAt === undefined) return undefined;
@@ -520,11 +578,9 @@ export function renderCompactNativeToolResult(
 	if (options.isPartial) return new Text("", 0, 0);
 
 	if (isError || options.expanded) {
-		const hasImage = result.content.some((entry) => entry.type === "image");
-		if (hasImage && !isError && !options.expanded) {
-			const text = asTextComponent(context.lastComponent);
-			text.setText(withCompactPadding(theme.fg("dim", "[image loaded — expand to view]")));
-			return text;
+		const image = toolName === "read" ? getCompactImageContentEntry(result) : undefined;
+		if (image && options.expanded && context.showImages && !isError) {
+			return renderCompactImageReadResult(result, theme, context, isError);
 		}
 		return renderCompactNativeExpandedOrErrorResult(toolName, result, options, theme, context, isError);
 	}
@@ -607,11 +663,25 @@ export function renderCompactCursorReplayResult(
 		);
 	}
 
+	const replayArgs =
+		context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined;
+	const replayDetails = asCursorReplayToolDetails(result.details);
+	if (shouldUseCompactCursorReplayBodyRenderer(toolName, result, replayArgs, replayDetails)) {
+		if (
+			isCursorTaskDisplayEnabled() &&
+			(toolName === "cursor_task" || isCursorTaskReplayContext(replayArgs, replayDetails))
+		) {
+			return renderCursorTaskResult(result, options, theme, isError);
+		}
+		const currentRenderResult = getCurrentRenderResult();
+		return currentRenderResult ? currentRenderResult(result, options, theme, context) : new Text("", 0, 0);
+	}
+
 	if (options.expanded || isError) {
 		const currentRenderResult = getCurrentRenderResult();
 		return currentRenderResult ? currentRenderResult(result, options, theme, context) : new Text("", 0, 0);
 	}
 	const text = asTextComponent(context.lastComponent);
-	text.setText("");
+	text.setText(withCompactPadding(formatCompactCursorReplayCall(toolName, replayArgs ?? {}, theme, context.cwd)));
 	return text;
 }
