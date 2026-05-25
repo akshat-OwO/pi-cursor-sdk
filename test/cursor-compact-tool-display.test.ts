@@ -265,6 +265,36 @@ describe("cursor-compact-tool-display", () => {
 		expect(rendered).not.toContain("fallback should not run");
 	});
 
+	it("renders collapsed bash failures from exit suffix when context.isError is false", () => {
+		const errorTheme = {
+			fg: (style: string, text: string) => (style === "error" ? `<error>${text}</error>` : text),
+			bold: (text: string) => text,
+		};
+		const lines = Array.from({ length: 6 }, (_, index) => `err-${index + 1}`).join("\n");
+		const collapsedError = renderCompactNativeToolResult(
+			"bash",
+			{ content: [{ type: "text", text: `${lines}\n\nCommand exited with code 2` }] },
+			{ expanded: false, isPartial: false },
+			errorTheme,
+			{
+				cwd: "/repo",
+				isError: false,
+				showImages: true,
+				args: { command: "npm run test" },
+				state: { startedAt: 0, endedAt: 7700 },
+			},
+			false,
+			() => () => new Text("fallback should not run", 0, 0),
+		);
+		const joined = collapsedError.render(120).join("\n");
+		expect(joined).not.toContain("fallback should not run");
+		expect(joined).toContain("$ npm run test");
+		expect(joined).toContain("err-1");
+		expect(joined).toContain("<error>Command exited with code 2</error>");
+		const redBg = `\x1b[48;2;${COMPACT_ERROR_BLOCK_BG_RGB.r};${COMPACT_ERROR_BLOCK_BG_RGB.g};${COMPACT_ERROR_BLOCK_BG_RGB.b}m`;
+		expect(joined).toContain(redBg);
+	});
+
 	it("renders collapsed bash errors in a red block with truncated output", () => {
 		const errorTheme = {
 			fg: (style: string, text: string) => text,
@@ -352,8 +382,9 @@ describe("cursor-compact-tool-display", () => {
 				stripBashStatusSuffix: true,
 			},
 		);
-		expect(preview).toHaveLength(2);
+		expect(preview).toHaveLength(3);
 		expect(preview[0]?.text).toBe("one");
+		expect(preview[2]?.text).toContain("Command exited with code 1");
 	});
 
 	it("renders read images inline in a dark block without requiring expand", () => {

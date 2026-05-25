@@ -20,14 +20,54 @@ export function parseCompactBashExitCode(text: string): number | undefined {
 	return Number.isFinite(exitCode) ? exitCode : undefined;
 }
 
-export function stripCompactBashStatusSuffix(text: string): string {
+export function getCompactBashStatusLine(text: string): string | undefined {
 	const trimmed = text.trimEnd();
-	if (!trimmed) return trimmed;
+	if (!trimmed) return undefined;
 	const parts = trimmed.split("\n\n");
-	if (parts.length < 2) return trimmed;
-	const lastPart = parts[parts.length - 1]?.trim() ?? "";
-	if (!BASH_STATUS_SUFFIX_PATTERNS.some((pattern) => pattern.test(lastPart))) return trimmed;
+	const lastPart = (parts.length > 1 ? parts[parts.length - 1] : parts[0])?.trim() ?? "";
+	if (!lastPart) return undefined;
+	return BASH_STATUS_SUFFIX_PATTERNS.some((pattern) => pattern.test(lastPart)) ? lastPart : undefined;
+}
+
+export function stripCompactBashStatusSuffix(text: string): string {
+	const statusLine = getCompactBashStatusLine(text);
+	if (!statusLine) return text.trimEnd();
+	const trimmed = text.trimEnd();
+	const parts = trimmed.split("\n\n");
+	if (parts.length < 2) return "";
 	return parts.slice(0, -1).join("\n\n").trimEnd();
+}
+
+export function resolveCompactBashRenderState(
+	outputText: string,
+	contextIsError: boolean,
+): { isError: boolean; exitCode: number | undefined; statusLine: string | undefined } {
+	const statusLine = getCompactBashStatusLine(outputText);
+	const parsedExitCode = parseCompactBashExitCode(outputText);
+	const exitCode =
+		parsedExitCode ?? (statusLine?.includes("aborted") || statusLine?.includes("timed out") ? 1 : undefined);
+	const failedFromStatus =
+		exitCode !== undefined && exitCode !== 0
+			? true
+			: statusLine !== undefined &&
+				(statusLine.includes("aborted") || statusLine.includes("timed out"));
+	return {
+		isError: contextIsError || failedFromStatus,
+		exitCode,
+		statusLine,
+	};
+}
+
+function appendCompactBashStatusPreviewLine(
+	previewLines: CompactDiffPreviewLine[],
+	statusLine: string,
+	theme: CursorReplayRenderTheme,
+): void {
+	const bgFn = getCompactErrorBlockBgFn();
+	previewLines.push({
+		text: theme.fg("error", statusLine),
+		bgFn,
+	});
 }
 
 export function buildCompactOutputPreviewLines(
@@ -60,6 +100,10 @@ export function buildCompactOutputPreviewLines(
 			text: theme.fg("muted", `... (${hiddenCount} more lines hidden)`),
 			bgFn,
 		});
+	}
+	if (options?.error && options.stripBashStatusSuffix) {
+		const statusLine = getCompactBashStatusLine(rawOutput);
+		if (statusLine) appendCompactBashStatusPreviewLine(previewLines, statusLine, theme);
 	}
 	return previewLines;
 }

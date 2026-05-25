@@ -36,6 +36,7 @@ import {
 import {
 	buildCompactOutputPreviewLines,
 	parseCompactBashExitCode,
+	resolveCompactBashRenderState,
 } from "./cursor-compact-output-display.js";
 import { formatDisplayPath } from "../transcript/cursor-transcript-utils.js";
 import { basename } from "node:path";
@@ -732,24 +733,26 @@ function renderCompactReplayBodyResult(
 	replayArgs: Record<string, unknown> | undefined,
 	replayDetails: ReturnType<typeof asCursorReplayToolDetails>,
 ): Component {
-	const callLine = buildCompactReplayCallLine(
-		toolName,
-		replayArgs,
-		replayDetails,
-		theme,
-		context.cwd,
-	);
 	const body =
 		(typeof replayDetails?.expandedText === "string" && replayDetails.expandedText.trim()) ||
 		getCompactResultText(result);
+	const bashState = resolveCompactBashRenderState(body, isError);
+	const callLine =
+		replayArgs && typeof replayArgs.command === "string"
+			? formatCompactBashCall(replayArgs, theme, context.cwd, {
+					exitCode: bashState.isError ? (bashState.exitCode ?? 1) : 0,
+					durationMs: getCompactBashDurationMs(context),
+				})
+			: buildCompactReplayCallLine(toolName, replayArgs, replayDetails, theme, context.cwd);
 	const previewLines = buildCompactOutputPreviewLines(body, theme, options.expanded ?? false, {
-		error: isError,
+		error: bashState.isError,
+		stripBashStatusSuffix: bashState.statusLine !== undefined,
 		maxCollapsedLines: CURSOR_REPLAY_COLLAPSED_PREVIEW_LINES,
 	});
 	return renderCompactHighlightedBlock(
 		callLine,
 		previewLines,
-		isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn(),
+		bashState.isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn(),
 	);
 }
 
@@ -830,7 +833,9 @@ function shouldUseCompactCursorReplayBodyRenderer(
 	if (details?.cursorToolName === "task" || details?.cursorToolName === "generateImage")
 		return true;
 	if (typeof details?.expandedText === "string" && details.expandedText.trim()) return true;
-	return getCompactResultText(result).includes("\n");
+	const text = getCompactResultText(result);
+	if (text.includes("\n")) return true;
+	return resolveCompactBashRenderState(text, false).isError;
 }
 
 function getCompactBashDurationMs(context: CompactToolRenderContext): number | undefined {
@@ -856,8 +861,9 @@ function buildCompactNativeCallLine(
 	}
 	if (toolName === "bash") {
 		const outputText = getCompactResultText(result);
+		const bashState = resolveCompactBashRenderState(outputText, isError);
 		return formatCompactBashCall(args, theme, cwd, {
-			exitCode: isError ? (parseCompactBashExitCode(outputText) ?? 1) : 0,
+			exitCode: bashState.isError ? (bashState.exitCode ?? 1) : 0,
 			durationMs: getCompactBashDurationMs(context),
 		});
 	}
@@ -889,19 +895,22 @@ function renderCompactNativeExpandedOrErrorResult(
 		isError,
 	);
 	const outputText = getCompactResultText(result);
+	const bashState =
+		toolName === "bash" ? resolveCompactBashRenderState(outputText, isError) : undefined;
+	const effectiveIsError = bashState?.isError ?? isError;
 	const previewLines = buildCompactOutputPreviewLines(
 		outputText,
 		theme,
 		options.expanded ?? false,
 		{
-			error: isError,
+			error: effectiveIsError,
 			stripBashStatusSuffix: toolName === "bash",
 		},
 	);
 	return renderCompactHighlightedBlock(
 		callLine,
 		previewLines,
-		isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn(),
+		effectiveIsError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn(),
 	);
 }
 
@@ -991,14 +1000,18 @@ export function renderCompactNativeToolResult(
 		}
 	}
 
-	if (isError || options.expanded) {
+	const outputText = getCompactResultText(result);
+	const bashState =
+		toolName === "bash" ? resolveCompactBashRenderState(outputText, isError) : undefined;
+	const effectiveIsError = bashState?.isError ?? isError;
+	if (effectiveIsError || options.expanded) {
 		return renderCompactNativeExpandedOrErrorResult(
 			toolName,
 			result,
 			options,
 			theme,
 			context,
-			isError,
+			effectiveIsError,
 		);
 	}
 
@@ -1014,10 +1027,11 @@ export function renderCompactNativeToolResult(
 		}
 		if (toolName === "bash") {
 			const durationMs = getCompactBashDurationMs(context);
+			const collapsedBashState = resolveCompactBashRenderState(outputText, isError);
 			text.setText(
 				withCompactPadding(
 					formatCompactBashCall(args, theme, context.cwd, {
-						exitCode: 0,
+						exitCode: collapsedBashState.isError ? (collapsedBashState.exitCode ?? 1) : 0,
 						durationMs,
 					}),
 				),
@@ -1119,7 +1133,44 @@ export function renderCompactCursorReplayResult(
 		);
 	}
 
-	if (options.expanded || isError) {
+	const replayOutputText = getCompactResultText(result);
+	const replayBashState = resolveCompactBashRenderState(replayOutputText, isError);
+	if (options.expanded || isError || replayBashState.isError) {
+		if (
+			!shouldUseCompactCursorReplayBodyRenderer(toolName, result, replayArgs, replayDetails)
+		) {
+			const shellArgs =
+				replayArgs && typeof replayArgs.command === "string"
+					? replayArgs
+					: replayArgs &&
+						  typeof replayArgs.activityTitle === "string" &&
+						  replayArgs.activityTitle.trim().startsWith("$")
+						? {
+								...replayArgs,
+								command: replayArgs.activityTitle.trim().replace(/^\$\s*/, ""),
+							}
+						: replayArgs;
+			if (shellArgs && typeof shellArgs.command === "string") {
+				const callLine = formatCompactBashCall(shellArgs, theme, context.cwd, {
+					exitCode: replayBashState.isError ? (replayBashState.exitCode ?? 1) : 0,
+					durationMs: getCompactBashDurationMs(context),
+				});
+				const previewLines = buildCompactOutputPreviewLines(
+					replayOutputText,
+					theme,
+					options.expanded ?? false,
+					{
+						error: replayBashState.isError,
+						stripBashStatusSuffix: replayBashState.statusLine !== undefined,
+					},
+				);
+				return renderCompactHighlightedBlock(
+					callLine,
+					previewLines,
+					replayBashState.isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn(),
+				);
+			}
+		}
 		const currentRenderResult = getCurrentRenderResult();
 		return currentRenderResult
 			? currentRenderResult(result, options, theme, context)
