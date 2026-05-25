@@ -22,7 +22,11 @@ import {
 	parseCompactBashExitCode,
 	stripCompactBashStatusSuffix,
 } from "../src/replay/cursor-compact-output-display.js";
-import { COMPACT_ERROR_BLOCK_BG_RGB } from "../src/replay/cursor-compact-diff-display.js";
+import {
+	COMPACT_DIFF_BLOCK_BG_RGB,
+	COMPACT_ERROR_BLOCK_BG_RGB,
+} from "../src/replay/cursor-compact-diff-display.js";
+import { normalizeTaskExpandedText } from "../src/task/cursor-task-display.js";
 import { buildCompactFileMutationPreviewText } from "../src/replay/cursor-compact-file-mutation-display.js";
 import { buildCompactDiffPreviewLines } from "../src/replay/cursor-compact-diff-display.js";
 
@@ -269,15 +273,16 @@ describe("cursor-compact-tool-display", () => {
 		expect(joined.split("$ false").length - 1).toBe(1);
 	});
 
-	it("renders compact cursor task results with subagent output", () => {
+	it("renders compact cursor task results in a dark block without duplicate headers", () => {
 		const collapsedTask = renderCompactCursorReplayResult(
 			"cursor_task",
 			{
-				content: [{ type: "text", text: "agent output line 1\nagent output line 2" }],
+				content: [{ type: "text", text: "Explore repo: first line\n\n## Section" }],
 				details: {
 					cursorToolName: "task",
 					description: "Explore repo",
-					expandedText: "agent output line 1\nagent output line 2",
+					summary: "Explore repo: first line",
+					expandedText: "Explore repo: first line\n\n## Section\n\nBody",
 					durationMs: 2500,
 				},
 			},
@@ -287,10 +292,25 @@ describe("cursor-compact-tool-display", () => {
 			false,
 			() => undefined,
 		);
-		const rendered = collapsedTask.render(120).join("\n");
-		expect(rendered).toContain("Explore repo");
-		expect(rendered).toContain("agent output line 1");
-		expect(rendered).not.toBe("");
+		const rendered = collapsedTask.render(120);
+		const joined = rendered.join("\n");
+		const blockBg = `\x1b[48;2;${COMPACT_DIFF_BLOCK_BG_RGB.r};${COMPACT_DIFF_BLOCK_BG_RGB.g};${COMPACT_DIFF_BLOCK_BG_RGB.b}m`;
+		expect(joined).toContain("Explore repo");
+		expect(joined).toContain("## Section");
+		expect(joined).toContain("Body");
+		expect(joined).not.toContain("Explore repo: first line");
+		expect(rendered[0]).toContain(blockBg);
+		expect((joined.match(/Explore repo: first line/g) ?? []).length).toBe(0);
+	});
+
+	it("normalizes duplicate task expanded text headers", () => {
+		expect(
+			normalizeTaskExpandedText(
+				"Explore repo: I'll inspect files\n\n## Overview",
+				"Explore repo",
+				"Explore repo: I'll inspect files",
+			),
+		).toBe("## Overview");
 	});
 
 	it("strips bash status suffixes and parses exit codes for compact errors", () => {
@@ -309,10 +329,10 @@ describe("cursor-compact-tool-display", () => {
 		expect(preview[0]?.text).toBe("one");
 	});
 
-	it("renders expanded read images through compact display", () => {
+	it("renders read images inline in a dark block without requiring expand", () => {
 		const tinyPng =
 			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-		const expandedImage = renderCompactNativeToolResult(
+		const collapsedImage = renderCompactNativeToolResult(
 			"read",
 			{
 				content: [
@@ -320,31 +340,19 @@ describe("cursor-compact-tool-display", () => {
 					{ type: "image", data: tinyPng, mimeType: "image/png" },
 				],
 			},
-			{ expanded: true, isPartial: false },
+			{ expanded: false, isPartial: false },
 			theme,
 			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
 			false,
 			() => () => new Text("fallback should not run", 0, 0),
 		);
-		const rendered = expandedImage.render(120).join("\n");
-		expect(rendered).toContain("→ Read badge.png");
-		expect(rendered).not.toContain("fallback should not run");
-		expect(rendered).not.toContain("[image loaded — expand to view]");
-	});
-
-	it("shows a collapsed image hint for read results with image content", () => {
-		const collapsedImage = renderCompactNativeToolResult(
-			"read",
-			{ content: [{ type: "image", data: "abc", mimeType: "image/png" }] },
-			{ expanded: false, isPartial: false },
-			theme,
-			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
-			false,
-			() => undefined,
-		);
-		expect(collapsedImage.render(120).join("\n").trimEnd()).toBe(
-			pad("[image loaded — expand to view]"),
-		);
+		const rendered = collapsedImage.render(120);
+		const joined = rendered.join("\n");
+		const blockBg = `\x1b[48;2;${COMPACT_DIFF_BLOCK_BG_RGB.r};${COMPACT_DIFF_BLOCK_BG_RGB.g};${COMPACT_DIFF_BLOCK_BG_RGB.b}m`;
+		expect(joined).toContain("→ Read badge.png");
+		expect(joined).not.toContain("fallback should not run");
+		expect(joined).not.toContain("[image loaded — expand to view]");
+		expect(rendered[0]).toContain(blockBg);
 	});
 
 	it("shows collapsed edit and write previews without summary headers", () => {

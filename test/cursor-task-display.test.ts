@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { renderCursorTaskCall, renderCursorTaskResult } from "../src/task/cursor-task-display.js";
+import {
+	normalizeTaskExpandedText,
+	renderCursorTaskCall,
+	renderCursorTaskResult,
+} from "../src/task/cursor-task-display.js";
 
 const theme = {
 	fg: (_color: string, text: string) => text,
@@ -57,5 +61,16 @@ describe("cursor-task-display", () => {
 		expect(completed).toContain("Explore repo layout");
 		expect(completed).toContain("2.5s");
 		expect(completed).toContain("⎿  20 files");
+		expect(completed).not.toContain("task Explore repo layout");
+	});
+
+	it("drops redundant summary lines from expanded task previews", () => {
+		expect(
+			normalizeTaskExpandedText(
+				"Explore repo layout: I'll scan the tree\n\n## Summary",
+				"Explore repo layout",
+				"Explore repo layout: I'll scan the tree",
+			),
+		).toBe("## Summary");
 	});
 });

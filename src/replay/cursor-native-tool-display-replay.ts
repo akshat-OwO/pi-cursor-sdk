@@ -71,7 +71,7 @@ type CursorReplayRenderResult = NonNullable<
 >;
 export type CursorReplayRenderTheme = Parameters<CursorReplayRenderCall>[1];
 
-function inferImageMimeTypeFromPath(path: string | undefined): string | undefined {
+export function inferImageMimeTypeFromPath(path: string | undefined): string | undefined {
 	switch (extname(path ?? "").toLowerCase()) {
 		case ".png":
 			return "image/png";
@@ -87,7 +87,7 @@ function inferImageMimeTypeFromPath(path: string | undefined): string | undefine
 	}
 }
 
-function readImageFileForReplay(path: string | undefined): string | undefined {
+export function readImageFileForReplay(path: string | undefined): string | undefined {
 	if (!path) return undefined;
 	try {
 		const stat = statSync(path);
