@@ -9,6 +9,8 @@ import {
 	type CursorReplayRenderTheme,
 } from "./cursor-native-tool-display-replay.js";
 import {
+	compactSupportsInlineImages,
+	getCompactImageFallbackText,
 	getCompactImageUnavailableText,
 	isGenericReadImageCaption,
 	resolveCompactReadImage,
@@ -43,6 +45,8 @@ type CompactToolRenderContext = Parameters<NonNullable<ToolDefinition["renderCal
 type CompactToolResult = Parameters<NonNullable<ToolDefinition["renderResult"]>>[0];
 
 export const COMPACT_ROW_PADDING = "  ";
+/** Extra left indent for image rows inside compact blocks. */
+export const COMPACT_IMAGE_LEFT_PADDING = COMPACT_ROW_PADDING.length + 2;
 const COMPACT_TOOL_NAMES = new Set(["read", "grep", "find", "bash", "edit", "write", "ls"]);
 const COMPACT_ICON_READ = "→";
 const COMPACT_ICON_WRITE = "←";
@@ -553,11 +557,23 @@ function applyCompactBlockPadding(line: string, blockBgFn: (text: string) => str
 	return blockBgFn(`${" ".repeat(COMPACT_ROW_PADDING.length)}${line}`);
 }
 
+function applyCompactImageBlockPadding(line: string, blockBgFn: (text: string) => string): string {
+	return blockBgFn(`${" ".repeat(COMPACT_IMAGE_LEFT_PADDING)}${line}`);
+}
+
 function renderCompactImageLines(
 	image: { data: string; mimeType: string; path?: string },
 	theme: CompactToolTheme,
 	blockBgFn: (text: string) => string,
 ): Component {
+	if (!compactSupportsInlineImages()) {
+		return new Text(
+			theme.fg("muted", getCompactImageFallbackText(image)),
+			COMPACT_IMAGE_LEFT_PADDING,
+			0,
+			blockBgFn,
+		);
+	}
 	const imageComponent = new Image(
 		image.data,
 		image.mimeType,
@@ -570,7 +586,9 @@ function renderCompactImageLines(
 	);
 	return {
 		render: (width: number) =>
-			imageComponent.render(width).map((line) => applyCompactBlockPadding(line, blockBgFn)),
+			imageComponent
+				.render(width)
+				.map((line) => applyCompactImageBlockPadding(line, blockBgFn)),
 		invalidate: () => {
 			imageComponent.invalidate();
 		},
@@ -610,7 +628,17 @@ function renderCompactReadImageBlock(
 			new Text(theme.fg("dim", caption), COMPACT_ROW_PADDING.length, 0, blockBgFn),
 		);
 	}
-	container.addChild(renderCompactImageLines(image, theme, blockBgFn));
+	const imageWithPath = {
+		...image,
+		path:
+			image.path ??
+			(typeof args?.path === "string"
+				? args.path
+				: typeof args?.file_path === "string"
+					? args.file_path
+					: undefined),
+	};
+	container.addChild(renderCompactImageLines(imageWithPath, theme, blockBgFn));
 	return container;
 }
 

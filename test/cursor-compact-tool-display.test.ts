@@ -1,6 +1,7 @@
-import { Text } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { resetCapabilitiesCache, setCapabilities, Text } from "@earendil-works/pi-tui";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+	COMPACT_IMAGE_LEFT_PADDING,
 	COMPACT_ROW_PADDING,
 	countCompactLsEntries,
 	countCompactSearchMatches,
@@ -28,6 +29,32 @@ import {
 } from "../src/replay/cursor-compact-diff-display.js";
 import { normalizeTaskExpandedText } from "../src/task/cursor-task-display.js";
 import { buildCompactFileMutationPreviewText } from "../src/replay/cursor-compact-file-mutation-display.js";
+
+const savedHerdrEnv = {
+	HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
+	HERDR_BIN_PATH: process.env.HERDR_BIN_PATH,
+	HERDR_ACTIVE_PANE_ID: process.env.HERDR_ACTIVE_PANE_ID,
+	HERDR_ENV: process.env.HERDR_ENV,
+};
+
+function clearHerdrEnv(): void {
+	delete process.env.HERDR_SOCKET_PATH;
+	delete process.env.HERDR_BIN_PATH;
+	delete process.env.HERDR_ACTIVE_PANE_ID;
+	delete process.env.HERDR_ENV;
+}
+
+function restoreHerdrEnv(): void {
+	for (const [key, value] of Object.entries(savedHerdrEnv)) {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
+}
+
+afterEach(() => {
+	resetCapabilitiesCache();
+	restoreHerdrEnv();
+});
 import { buildCompactDiffPreviewLines } from "../src/replay/cursor-compact-diff-display.js";
 
 const theme = {
@@ -330,6 +357,8 @@ describe("cursor-compact-tool-display", () => {
 	});
 
 	it("renders read images inline in a dark block without requiring expand", () => {
+		clearHerdrEnv();
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		const tinyPng =
 			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 		const collapsedImage = renderCompactNativeToolResult(
@@ -353,6 +382,58 @@ describe("cursor-compact-tool-display", () => {
 		expect(joined).not.toContain("fallback should not run");
 		expect(joined).not.toContain("[image loaded — expand to view]");
 		expect(rendered[0]).toContain(blockBg);
+	});
+
+	it("renders read image fallback text inside herdr instead of kitty graphics", () => {
+		clearHerdrEnv();
+		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		const tinyPng =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+		const collapsedImage = renderCompactNativeToolResult(
+			"read",
+			{
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", data: tinyPng, mimeType: "image/png" },
+				],
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
+			false,
+			() => () => new Text("fallback should not run", 0, 0),
+		);
+		const joined = collapsedImage.render(120).join("\n");
+		expect(joined).toContain("[Image: badge.png [image/png]");
+		expect(joined).not.toContain("\x1b_G");
+	});
+
+	it("indents read image rows with extra left padding", () => {
+		clearHerdrEnv();
+		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		const tinyPng =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+		const collapsedImage = renderCompactNativeToolResult(
+			"read",
+			{
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", data: tinyPng, mimeType: "image/png" },
+				],
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
+			false,
+			() => () => new Text("", 0, 0),
+		);
+		const imageLine = collapsedImage.render(120).find((line) => line.includes("[Image:"));
+		expect(imageLine).toBeDefined();
+		expect(COMPACT_IMAGE_LEFT_PADDING).toBeGreaterThan(COMPACT_ROW_PADDING.length);
+		const visible = imageLine!.replace(/\x1b\[[0-9;]*m/g, "");
+		expect(visible.startsWith(" ".repeat(COMPACT_IMAGE_LEFT_PADDING))).toBe(true);
 	});
 
 	it("shows collapsed edit and write previews without summary headers", () => {

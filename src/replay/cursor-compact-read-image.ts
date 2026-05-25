@@ -59,11 +59,35 @@ export function resolveCompactReadImage(
 	return { data, mimeType, path: rawPath };
 }
 
-export function getCompactImageUnavailableText(image: { data: string; mimeType: string }): string {
-	const caps = getCapabilities();
-	if (caps.images) return "";
+export function isHerdrEmbeddedTerminal(): boolean {
+	return !!(
+		process.env.HERDR_SOCKET_PATH ||
+		process.env.HERDR_BIN_PATH ||
+		process.env.HERDR_ACTIVE_PANE_ID ||
+		process.env.HERDR_ENV === "1"
+	);
+}
+
+export function compactSupportsInlineImages(): boolean {
+	if (!getCapabilities().images) return false;
+	// Herdr panes use vt100 replay; Kitty graphics are opt-in and usually off.
+	if (isHerdrEmbeddedTerminal()) return false;
+	return true;
+}
+
+export function getCompactImageFallbackText(image: {
+	data: string;
+	mimeType: string;
+	path?: string;
+}): string {
 	const dims = getImageDimensions(image.data, image.mimeType) ?? undefined;
-	return imageFallback(image.mimeType, dims);
+	const filename = image.path?.trim() ? image.path.split(/[/\\]/).pop() : undefined;
+	return imageFallback(image.mimeType, dims, filename);
+}
+
+export function getCompactImageUnavailableText(image: { data: string; mimeType: string }): string {
+	if (compactSupportsInlineImages()) return "";
+	return getCompactImageFallbackText(image);
 }
 
 export function isGenericReadImageCaption(text: string): boolean {
