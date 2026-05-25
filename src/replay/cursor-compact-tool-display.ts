@@ -357,7 +357,9 @@ export function renderCompactHighlightedBlock(
 ): Component {
 	const container = new Container();
 	if (previewLines && previewLines.length > 0) {
-		container.addChild(new Text(COMPACT_DIFF_BLOCK_SPACER_TEXT, COMPACT_ROW_PADDING.length, 0, blockBgFn));
+		container.addChild(
+			new Text(COMPACT_DIFF_BLOCK_SPACER_TEXT, COMPACT_ROW_PADDING.length, 0, blockBgFn),
+		);
 		container.addChild(new Text(callLine, COMPACT_ROW_PADDING.length, 0, blockBgFn));
 		for (const previewLine of previewLines) {
 			container.addChild(
@@ -416,13 +418,22 @@ function renderCompactFileMutationToolResult(
 	if (options.isPartial) return new Text("", 0, 0);
 	if (isError) {
 		const mutationArgs = withReplayMutationArgs(
-			context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined,
+			context.args && typeof context.args === "object"
+				? (context.args as Record<string, unknown>)
+				: undefined,
 			asCursorReplayToolDetails(result.details),
 		);
-		const callLine = callLineOverride ?? buildCompactFileMutationCallLine(toolName, mutationArgs, theme, context.cwd);
-		const previewLines = buildCompactOutputPreviewLines(getCompactResultText(result), theme, options.expanded ?? false, {
-			error: true,
-		});
+		const callLine =
+			callLineOverride ??
+			buildCompactFileMutationCallLine(toolName, mutationArgs, theme, context.cwd);
+		const previewLines = buildCompactOutputPreviewLines(
+			getCompactResultText(result),
+			theme,
+			options.expanded ?? false,
+			{
+				error: true,
+			},
+		);
 		return renderCompactHighlightedBlock(callLine, previewLines, getCompactErrorBlockBgFn());
 	}
 
@@ -515,9 +526,15 @@ export function countCompactLsEntries(result: CompactToolResult): number {
 	}).length;
 }
 
-function getCompactImageContentEntry(result: CompactToolResult): { data: string; mimeType: string } | undefined {
+function getCompactImageContentEntry(
+	result: CompactToolResult,
+): { data: string; mimeType: string } | undefined {
 	for (const entry of result.content) {
-		if (entry.type === "image" && typeof entry.data === "string" && typeof entry.mimeType === "string") {
+		if (
+			entry.type === "image" &&
+			typeof entry.data === "string" &&
+			typeof entry.mimeType === "string"
+		) {
 			return { data: entry.data, mimeType: entry.mimeType };
 		}
 	}
@@ -533,8 +550,18 @@ function renderCompactImageReadResult(
 	const image = getCompactImageContentEntry(result);
 	if (!image) return new Text("", 0, 0);
 	const args =
-		context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined;
-	const callLine = buildCompactNativeCallLine("read", args, theme, context.cwd, result, context, isError);
+		context.args && typeof context.args === "object"
+			? (context.args as Record<string, unknown>)
+			: undefined;
+	const callLine = buildCompactNativeCallLine(
+		"read",
+		args,
+		theme,
+		context.cwd,
+		result,
+		context,
+		isError,
+	);
 	const caption = getCompactResultText(result).trim();
 	const header = caption
 		? `${withCompactPadding(callLine)}\n${withCompactPadding(theme.fg("dim", caption))}`
@@ -561,10 +588,14 @@ function shouldUseCompactCursorReplayBodyRenderer(
 	args: Record<string, unknown> | undefined,
 	details: ReturnType<typeof asCursorReplayToolDetails>,
 ): boolean {
-	if (isCursorTaskDisplayEnabled() && (toolName === "cursor_task" || isCursorTaskReplayContext(args, details))) {
+	if (
+		isCursorTaskDisplayEnabled() &&
+		(toolName === "cursor_task" || isCursorTaskReplayContext(args, details))
+	) {
 		return true;
 	}
-	if (details?.cursorToolName === "task" || details?.cursorToolName === "generateImage") return true;
+	if (details?.cursorToolName === "task" || details?.cursorToolName === "generateImage")
+		return true;
 	if (typeof details?.expandedText === "string" && details.expandedText.trim()) return true;
 	return getCompactResultText(result).includes("\n");
 }
@@ -612,14 +643,33 @@ function renderCompactNativeExpandedOrErrorResult(
 	isError: boolean,
 ): Component {
 	const args =
-		context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined;
-	const callLine = buildCompactNativeCallLine(toolName, args, theme, context.cwd, result, context, isError);
+		context.args && typeof context.args === "object"
+			? (context.args as Record<string, unknown>)
+			: undefined;
+	const callLine = buildCompactNativeCallLine(
+		toolName,
+		args,
+		theme,
+		context.cwd,
+		result,
+		context,
+		isError,
+	);
 	const outputText = getCompactResultText(result);
-	const previewLines = buildCompactOutputPreviewLines(outputText, theme, options.expanded ?? false, {
-		error: isError,
-		stripBashStatusSuffix: toolName === "bash",
-	});
-	return renderCompactHighlightedBlock(callLine, previewLines, isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn());
+	const previewLines = buildCompactOutputPreviewLines(
+		outputText,
+		theme,
+		options.expanded ?? false,
+		{
+			error: isError,
+			stripBashStatusSuffix: toolName === "bash",
+		},
+	);
+	return renderCompactHighlightedBlock(
+		callLine,
+		previewLines,
+		isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn(),
+	);
 }
 
 export function renderCompactNativeToolCall(
@@ -683,7 +733,14 @@ export function renderCompactNativeToolResult(
 		if (image && options.expanded && context.showImages && !isError) {
 			return renderCompactImageReadResult(result, theme, context, isError);
 		}
-		return renderCompactNativeExpandedOrErrorResult(toolName, result, options, theme, context, isError);
+		return renderCompactNativeExpandedOrErrorResult(
+			toolName,
+			result,
+			options,
+			theme,
+			context,
+			isError,
+		);
 	}
 
 	const text = asTextComponent(context.lastComponent);
@@ -696,7 +753,9 @@ export function renderCompactNativeToolResult(
 		const args = context.args as Record<string, unknown>;
 		if (toolName === "grep" || toolName === "find") {
 			const matchCount = countCompactSearchMatches(toolName, result);
-			text.setText(withCompactPadding(COMPACT_CALL_FORMATTERS[toolName](args, theme, context.cwd, matchCount)));
+			text.setText(
+				withCompactPadding(COMPACT_CALL_FORMATTERS[toolName](args, theme, context.cwd, matchCount)),
+			);
 			return text;
 		}
 		if (toolName === "bash") {
@@ -773,7 +832,9 @@ export function renderCompactCursorReplayResult(
 	}
 
 	const replayArgs =
-		context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined;
+		context.args && typeof context.args === "object"
+			? (context.args as Record<string, unknown>)
+			: undefined;
 	const replayDetails = asCursorReplayToolDetails(result.details);
 	if (shouldUseCompactCursorReplayBodyRenderer(toolName, result, replayArgs, replayDetails)) {
 		if (
@@ -783,7 +844,9 @@ export function renderCompactCursorReplayResult(
 			return renderCursorTaskResult(result, options, theme, isError);
 		}
 		const currentRenderResult = getCurrentRenderResult();
-		return currentRenderResult ? currentRenderResult(result, options, theme, context) : new Text("", 0, 0);
+		return currentRenderResult
+			? currentRenderResult(result, options, theme, context)
+			: new Text("", 0, 0);
 	}
 
 	if (options.expanded || isError) {
@@ -793,6 +856,10 @@ export function renderCompactCursorReplayResult(
 			: new Text("", 0, 0);
 	}
 	const text = asTextComponent(context.lastComponent);
-	text.setText(withCompactPadding(formatCompactCursorReplayCall(toolName, replayArgs ?? {}, theme, context.cwd)));
+	text.setText(
+		withCompactPadding(
+			formatCompactCursorReplayCall(toolName, replayArgs ?? {}, theme, context.cwd),
+		),
+	);
 	return text;
 }

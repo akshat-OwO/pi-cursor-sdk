@@ -296,10 +296,15 @@ describe("cursor-compact-tool-display", () => {
 	it("strips bash status suffixes and parses exit codes for compact errors", () => {
 		expect(parseCompactBashExitCode("stdout\n\nCommand exited with code 2")).toBe(2);
 		expect(stripCompactBashStatusSuffix("stdout\n\nCommand exited with code 2")).toBe("stdout");
-		const preview = buildCompactOutputPreviewLines("one\ntwo\n\nCommand exited with code 1", theme, false, {
-			error: true,
-			stripBashStatusSuffix: true,
-		});
+		const preview = buildCompactOutputPreviewLines(
+			"one\ntwo\n\nCommand exited with code 1",
+			theme,
+			false,
+			{
+				error: true,
+				stripBashStatusSuffix: true,
+			},
+		);
 		expect(preview).toHaveLength(2);
 		expect(preview[0]?.text).toBe("one");
 	});
