@@ -68,6 +68,47 @@ export function renderCursorTaskCall(
 	return new Text(text, 0, 0);
 }
 
+function isRedundantTaskActivity(activity: string, description: string | undefined): boolean {
+	if (!description) return false;
+	const normalizedActivity = activity.trim();
+	const normalizedDescription = description.trim();
+	if (!normalizedActivity || !normalizedDescription) return false;
+	if (normalizedActivity === normalizedDescription) return true;
+	return (
+		normalizedActivity.startsWith(`${normalizedDescription}:`) ||
+		normalizedActivity.startsWith(`${normalizedDescription} `)
+	);
+}
+
+export function normalizeTaskExpandedText(
+	expandedText: string,
+	description?: string,
+	summary?: string,
+): string {
+	let body = expandedText.trim();
+	if (!body) return body;
+	const lines = body.split("\n");
+	const firstLine = lines[0]?.trim() ?? "";
+	if (description) {
+		const normalizedDescription = description.trim();
+		if (
+			firstLine === normalizedDescription ||
+			firstLine.startsWith(`${normalizedDescription}:`) ||
+			firstLine.startsWith(`${normalizedDescription} `)
+		) {
+			body = lines.slice(1).join("\n").trim();
+		}
+	}
+	if (summary && body) {
+		const summaryLines = body.split("\n");
+		const summaryFirst = summaryLines[0]?.trim() ?? "";
+		if (summaryFirst === summary.trim()) {
+			body = summaryLines.slice(1).join("\n").trim();
+		}
+	}
+	return body || expandedText.trim();
+}
+
 function renderCursorTaskStatsLine(
 	theme: CursorReplayRenderTheme,
 	durationMs: number | undefined,
@@ -108,16 +149,24 @@ export function renderCursorTaskResult(
 	if (description) line += " " + theme.fg("muted", description);
 	if (stats) line += " " + theme.fg("dim", "·") + " " + stats;
 	const previewSource = details?.expandedText ?? (text.includes("\n") ? text : undefined);
-	const previewLine = activity && activity !== description ? activity : undefined;
+	const previewLine =
+		activity && activity !== description && !isRedundantTaskActivity(activity, description)
+			? activity
+			: undefined;
 	if (previewLine) line += "\n" + theme.fg("dim", `  ⎿  ${previewLine}`);
 	if (previewSource) {
+		const normalizedPreview = normalizeTaskExpandedText(
+			previewSource,
+			description,
+			typeof details?.summary === "string" ? details.summary : undefined,
+		);
 		const preview = options.expanded
-			? previewSource
+			? normalizedPreview
 					.split("\n")
 					.slice(0, 50)
 					.map((entry) => theme.fg("dim", `  ${entry}`))
 					.join("\n")
-			: formatCursorReplayPreview(previewSource, theme);
+			: formatCursorReplayPreview(normalizedPreview, theme);
 		if (preview) line += `\n${preview}`;
 	}
 	return new Text(line, 0, 0);

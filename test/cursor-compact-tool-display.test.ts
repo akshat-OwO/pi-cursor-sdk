@@ -1,6 +1,7 @@
-import { Text } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
+import { resetCapabilitiesCache, setCapabilities, Text } from "@earendil-works/pi-tui";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+	COMPACT_IMAGE_LEFT_PADDING,
 	COMPACT_ROW_PADDING,
 	countCompactLsEntries,
 	countCompactSearchMatches,
@@ -13,10 +14,47 @@ import {
 	formatCompactReadCall,
 	formatCompactWriteCall,
 	renderCompactFileMutationBlock,
+	renderCompactCursorReplayResult,
 	renderCompactNativeToolCall,
 	renderCompactNativeToolResult,
 } from "../src/replay/cursor-compact-tool-display.js";
+import {
+	buildCompactOutputPreviewLines,
+	parseCompactBashExitCode,
+	stripCompactBashStatusSuffix,
+} from "../src/replay/cursor-compact-output-display.js";
+import {
+	COMPACT_DIFF_BLOCK_BG_RGB,
+	COMPACT_ERROR_BLOCK_BG_RGB,
+} from "../src/replay/cursor-compact-diff-display.js";
+import { normalizeTaskExpandedText } from "../src/task/cursor-task-display.js";
 import { buildCompactFileMutationPreviewText } from "../src/replay/cursor-compact-file-mutation-display.js";
+
+const savedHerdrEnv = {
+	HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
+	HERDR_BIN_PATH: process.env.HERDR_BIN_PATH,
+	HERDR_ACTIVE_PANE_ID: process.env.HERDR_ACTIVE_PANE_ID,
+	HERDR_ENV: process.env.HERDR_ENV,
+};
+
+function clearHerdrEnv(): void {
+	delete process.env.HERDR_SOCKET_PATH;
+	delete process.env.HERDR_BIN_PATH;
+	delete process.env.HERDR_ACTIVE_PANE_ID;
+	delete process.env.HERDR_ENV;
+}
+
+function restoreHerdrEnv(): void {
+	for (const [key, value] of Object.entries(savedHerdrEnv)) {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
+}
+
+afterEach(() => {
+	resetCapabilitiesCache();
+	restoreHerdrEnv();
+});
 import { buildCompactDiffPreviewLines } from "../src/replay/cursor-compact-diff-display.js";
 
 const theme = {
@@ -213,7 +251,6 @@ describe("cursor-compact-tool-display", () => {
 	});
 
 	it("shows compact tool errors when collapsed", () => {
-		const renderResult = () => new Text("\nfile not found", 0, 0);
 		const collapsedError = renderCompactNativeToolResult(
 			"read",
 			{ content: [{ type: "text", text: "file not found" }] },
@@ -221,24 +258,213 @@ describe("cursor-compact-tool-display", () => {
 			theme,
 			{ cwd: "/repo", isError: true, showImages: true, args: { path: "missing.txt" } },
 			true,
-			() => renderResult,
+			() => () => new Text("fallback should not run", 0, 0),
 		);
-		expect(collapsedError.render(120).join("\n")).toContain("file not found");
+		const rendered = collapsedError.render(120).join("\n");
+		expect(rendered).toContain("file not found");
+		expect(rendered).not.toContain("fallback should not run");
 	});
 
-	it("shows a collapsed image hint for read results with image content", () => {
+	it("renders collapsed bash failures from exit suffix when context.isError is false", () => {
+		const errorTheme = {
+			fg: (style: string, text: string) => (style === "error" ? `<error>${text}</error>` : text),
+			bold: (text: string) => text,
+		};
+		const lines = Array.from({ length: 6 }, (_, index) => `err-${index + 1}`).join("\n");
+		const collapsedError = renderCompactNativeToolResult(
+			"bash",
+			{ content: [{ type: "text", text: `${lines}\n\nCommand exited with code 2` }] },
+			{ expanded: false, isPartial: false },
+			errorTheme,
+			{
+				cwd: "/repo",
+				isError: false,
+				showImages: true,
+				args: { command: "npm run test" },
+				state: { startedAt: 0, endedAt: 7700 },
+			},
+			false,
+			() => () => new Text("fallback should not run", 0, 0),
+		);
+		const joined = collapsedError.render(120).join("\n");
+		expect(joined).not.toContain("fallback should not run");
+		expect(joined).toContain("$ npm run test");
+		expect(joined).toContain("err-1");
+		expect(joined).toContain("<error>Command exited with code 2</error>");
+		const redBg = `\x1b[48;2;${COMPACT_ERROR_BLOCK_BG_RGB.r};${COMPACT_ERROR_BLOCK_BG_RGB.g};${COMPACT_ERROR_BLOCK_BG_RGB.b}m`;
+		expect(joined).toContain(redBg);
+	});
+
+	it("renders collapsed bash errors in a red block with truncated output", () => {
+		const errorTheme = {
+			fg: (style: string, text: string) => text,
+			bold: (text: string) => text,
+		};
+		const lines = Array.from({ length: 6 }, (_, index) => `err-${index + 1}`).join("\n");
+		const collapsedError = renderCompactNativeToolResult(
+			"bash",
+			{ content: [{ type: "text", text: `${lines}\n\nCommand exited with code 2` }] },
+			{ expanded: false, isPartial: false },
+			errorTheme,
+			{
+				cwd: "/repo",
+				isError: true,
+				showImages: true,
+				args: { command: "false" },
+				state: { startedAt: 0, endedAt: 500 },
+			},
+			true,
+			() => () => new Text("fallback should not run", 0, 0),
+		);
+		const rendered = collapsedError.render(120);
+		const joined = rendered.join("\n");
+		expect(joined).not.toContain("fallback should not run");
+		expect(joined).toContain("$ false");
+		expect(joined).toContain("(exit 2");
+		expect(joined).toContain("err-1");
+		expect(joined).toContain("err-5");
+		expect(joined).not.toContain("err-6");
+		expect(joined).toContain("1 more lines hidden");
+		const redBg = `\x1b[48;2;${COMPACT_ERROR_BLOCK_BG_RGB.r};${COMPACT_ERROR_BLOCK_BG_RGB.g};${COMPACT_ERROR_BLOCK_BG_RGB.b}m`;
+		expect(rendered[0]).toContain(redBg);
+		expect(joined.split("$ false").length - 1).toBe(1);
+	});
+
+	it("renders compact cursor task results in a dark block without duplicate headers", () => {
+		const collapsedTask = renderCompactCursorReplayResult(
+			"cursor_task",
+			{
+				content: [{ type: "text", text: "Explore repo: first line\n\n## Section" }],
+				details: {
+					cursorToolName: "task",
+					description: "Explore repo",
+					summary: "Explore repo: first line",
+					expandedText: "Explore repo: first line\n\n## Section\n\nBody",
+					durationMs: 2500,
+				},
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { description: "Explore repo" } },
+			false,
+			() => undefined,
+		);
+		const rendered = collapsedTask.render(120);
+		const joined = rendered.join("\n");
+		const blockBg = `\x1b[48;2;${COMPACT_DIFF_BLOCK_BG_RGB.r};${COMPACT_DIFF_BLOCK_BG_RGB.g};${COMPACT_DIFF_BLOCK_BG_RGB.b}m`;
+		expect(joined).toContain("Explore repo");
+		expect(joined).toContain("## Section");
+		expect(joined).toContain("Body");
+		expect(joined).not.toContain("Explore repo: first line");
+		expect(rendered[0]).toContain(blockBg);
+		expect((joined.match(/Explore repo: first line/g) ?? []).length).toBe(0);
+	});
+
+	it("normalizes duplicate task expanded text headers", () => {
+		expect(
+			normalizeTaskExpandedText(
+				"Explore repo: I'll inspect files\n\n## Overview",
+				"Explore repo",
+				"Explore repo: I'll inspect files",
+			),
+		).toBe("## Overview");
+	});
+
+	it("strips bash status suffixes and parses exit codes for compact errors", () => {
+		expect(parseCompactBashExitCode("stdout\n\nCommand exited with code 2")).toBe(2);
+		expect(stripCompactBashStatusSuffix("stdout\n\nCommand exited with code 2")).toBe("stdout");
+		const preview = buildCompactOutputPreviewLines(
+			"one\ntwo\n\nCommand exited with code 1",
+			theme,
+			false,
+			{
+				error: true,
+				stripBashStatusSuffix: true,
+			},
+		);
+		expect(preview).toHaveLength(3);
+		expect(preview[0]?.text).toBe("one");
+		expect(preview[2]?.text).toContain("Command exited with code 1");
+	});
+
+	it("renders read images inline in a dark block without requiring expand", () => {
+		clearHerdrEnv();
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		const tinyPng =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 		const collapsedImage = renderCompactNativeToolResult(
 			"read",
-			{ content: [{ type: "image", data: "abc", mimeType: "image/png" }] },
+			{
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", data: tinyPng, mimeType: "image/png" },
+				],
+			},
 			{ expanded: false, isPartial: false },
 			theme,
 			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
 			false,
-			() => undefined,
+			() => () => new Text("fallback should not run", 0, 0),
 		);
-		expect(collapsedImage.render(120).join("\n").trimEnd()).toBe(
-			pad("[image loaded — expand to view]"),
+		const rendered = collapsedImage.render(120);
+		const joined = rendered.join("\n");
+		const blockBg = `\x1b[48;2;${COMPACT_DIFF_BLOCK_BG_RGB.r};${COMPACT_DIFF_BLOCK_BG_RGB.g};${COMPACT_DIFF_BLOCK_BG_RGB.b}m`;
+		expect(joined).toContain("→ Read badge.png");
+		expect(joined).not.toContain("fallback should not run");
+		expect(joined).not.toContain("[image loaded — expand to view]");
+		expect(rendered[0]).toContain(blockBg);
+	});
+
+	it("renders read image fallback text inside herdr instead of kitty graphics", () => {
+		clearHerdrEnv();
+		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		const tinyPng =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+		const collapsedImage = renderCompactNativeToolResult(
+			"read",
+			{
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", data: tinyPng, mimeType: "image/png" },
+				],
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
+			false,
+			() => () => new Text("fallback should not run", 0, 0),
 		);
+		const joined = collapsedImage.render(120).join("\n");
+		expect(joined).toContain("[Image: badge.png [image/png]");
+		expect(joined).not.toContain("\x1b_G");
+	});
+
+	it("indents read image rows with extra left padding", () => {
+		clearHerdrEnv();
+		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		const tinyPng =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+		const collapsedImage = renderCompactNativeToolResult(
+			"read",
+			{
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", data: tinyPng, mimeType: "image/png" },
+				],
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ cwd: "/repo", isError: false, showImages: true, args: { path: "badge.png" } },
+			false,
+			() => () => new Text("", 0, 0),
+		);
+		const imageLine = collapsedImage.render(120).find((line) => line.includes("[Image:"));
+		expect(imageLine).toBeDefined();
+		expect(COMPACT_IMAGE_LEFT_PADDING).toBeGreaterThan(COMPACT_ROW_PADDING.length);
+		const visible = imageLine!.replace(/\x1b\[[0-9;]*m/g, "");
+		expect(visible.startsWith(" ".repeat(COMPACT_IMAGE_LEFT_PADDING))).toBe(true);
 	});
 
 	it("shows collapsed edit and write previews without summary headers", () => {
