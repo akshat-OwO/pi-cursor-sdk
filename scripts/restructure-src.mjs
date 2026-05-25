@@ -8,6 +8,12 @@ import { dirname, join, relative, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
+function assertNotAlreadyRestructured() {
+	if (existsSync(join(ROOT, "src", "discovery", "model-discovery.ts"))) {
+		throw new Error("src/ is already modular; restructure-src.mjs must not run again.");
+	}
+}
+
 /** @type {Record<string, string>} basename (no ext) -> path under src/ without .ts */
 const MODULE_DIRS = {
 	// discovery

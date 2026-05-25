@@ -120,11 +120,12 @@ CURSOR_API_KEY="your-key" pi -e . --model cursor/composer-2.5
 
 Use these when developing this repo and you want pi to load **this checkout** instead of the GitHub package (or the reverse):
 
-| Goal | Command |
-| --- | --- |
-| Use this repo (global `~/.pi/agent/settings.json`) | `npm run pi:package:local` or `scripts/pi-use-local-cursor-sdk.sh` |
-| Use GitHub package (remove local path) | `npm run pi:package:remote` or `scripts/pi-use-remote-cursor-sdk.sh` |
-| Project-local `.pi/settings.json` | Add `--project` / `-l` to either script |
+| Goal                                               | Command                                                              |
+| -------------------------------------------------- | -------------------------------------------------------------------- |
+| Use this repo (global `~/.pi/agent/settings.json`) | `npm run pi:package:local` or `scripts/pi-use-local-cursor-sdk.sh`   |
+| Use GitHub package (remove local path)             | `npm run pi:package:remote` or `scripts/pi-use-remote-cursor-sdk.sh` |
+| Project-local `.pi/settings.json`                  | Add `--project` / `-l` to either script                              |
+| Both global and project settings                   | Add `--both`                                                         |
 
 Remote source defaults to `https://github.com/akshat-OwO/pi-cursor-sdk`. Override with `PI_CURSOR_SDK_PACKAGE_REMOTE` or `--remote <source>`.
 
