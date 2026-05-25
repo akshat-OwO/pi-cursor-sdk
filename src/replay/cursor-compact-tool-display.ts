@@ -35,7 +35,6 @@ import {
 } from "./cursor-compact-diff-display.js";
 import {
 	buildCompactOutputPreviewLines,
-	parseCompactBashExitCode,
 	resolveCompactBashRenderState,
 } from "./cursor-compact-output-display.js";
 import { formatDisplayPath } from "../transcript/cursor-transcript-utils.js";
@@ -554,10 +553,6 @@ export function countCompactLsEntries(result: CompactToolResult): number {
 	}).length;
 }
 
-function applyCompactBlockPadding(line: string, blockBgFn: (text: string) => string): string {
-	return blockBgFn(`${" ".repeat(COMPACT_ROW_PADDING.length)}${line}`);
-}
-
 function applyCompactImageBlockPadding(line: string, blockBgFn: (text: string) => string): string {
 	return blockBgFn(`${" ".repeat(COMPACT_IMAGE_LEFT_PADDING)}${line}`);
 }
@@ -587,9 +582,7 @@ function renderCompactImageLines(
 	);
 	return {
 		render: (width: number) =>
-			imageComponent
-				.render(width)
-				.map((line) => applyCompactImageBlockPadding(line, blockBgFn)),
+			imageComponent.render(width).map((line) => applyCompactImageBlockPadding(line, blockBgFn)),
 		invalidate: () => {
 			imageComponent.invalidate();
 		},
@@ -1136,9 +1129,7 @@ export function renderCompactCursorReplayResult(
 	const replayOutputText = getCompactResultText(result);
 	const replayBashState = resolveCompactBashRenderState(replayOutputText, isError);
 	if (options.expanded || isError || replayBashState.isError) {
-		if (
-			!shouldUseCompactCursorReplayBodyRenderer(toolName, result, replayArgs, replayDetails)
-		) {
+		if (!shouldUseCompactCursorReplayBodyRenderer(toolName, result, replayArgs, replayDetails)) {
 			const shellArgs =
 				replayArgs && typeof replayArgs.command === "string"
 					? replayArgs

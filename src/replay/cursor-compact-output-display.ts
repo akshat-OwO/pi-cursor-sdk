@@ -26,7 +26,9 @@ export function getCompactBashStatusLine(text: string): string | undefined {
 	const parts = trimmed.split("\n\n");
 	const lastPart = (parts.length > 1 ? parts[parts.length - 1] : parts[0])?.trim() ?? "";
 	if (!lastPart) return undefined;
-	return BASH_STATUS_SUFFIX_PATTERNS.some((pattern) => pattern.test(lastPart)) ? lastPart : undefined;
+	return BASH_STATUS_SUFFIX_PATTERNS.some((pattern) => pattern.test(lastPart))
+		? lastPart
+		: undefined;
 }
 
 export function stripCompactBashStatusSuffix(text: string): string {
@@ -45,7 +47,8 @@ export function resolveCompactBashRenderState(
 	const statusLine = getCompactBashStatusLine(outputText);
 	const parsedExitCode = parseCompactBashExitCode(outputText);
 	const exitCode =
-		parsedExitCode ?? (statusLine?.includes("aborted") || statusLine?.includes("timed out") ? 1 : undefined);
+		parsedExitCode ??
+		(statusLine?.includes("aborted") || statusLine?.includes("timed out") ? 1 : undefined);
 	const failedFromStatus =
 		exitCode !== undefined && exitCode !== 0
 			? true
