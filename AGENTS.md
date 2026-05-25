@@ -47,6 +47,7 @@ Source code lives under modular `src/` folders. See [`src/README.md`](src/README
 
 - Lint: `npm run lint` (oxlint; `npm run lint:fix` to auto-fix safe issues)
 - Format: `npm run format` (oxfmt; `npm run format:check` in CI)
+- CI: GitHub Actions [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs typecheck, lint, format check, and tests on every pull request
 - IDE: VS Code ([`.vscode/`](.vscode/)) and Zed ([`.zed/`](.zed/)) workspace settings for the Oxc extension
 
 ## Coding conventions
