@@ -42,7 +42,8 @@ Source code lives under modular `src/` folders. See [`src/README.md`](src/README
 - Package-readiness check: `npm pack --dry-run`
 - Watch tests while developing: `npm run test:watch`
 - Local development run, requires a Cursor key: `CURSOR_API_KEY="your-key" pi -e . --model cursor/composer-2.5`
-- Local extension install (recommended for this repo): symlink the repo to `~/.pi/agent/extensions/cursor-sdk`, run `pnpm install`, then start pi from any project.
+- Local extension install: `npm run pi:package:local` (or `scripts/pi-use-local-cursor-sdk.sh`) writes this checkout into `packages` in `~/.pi/agent/settings.json` and removes remote `pi-cursor-sdk` entries; `npm run pi:package:remote` restores the GitHub package
+- Alternate manual install: symlink the repo to `~/.pi/agent/extensions/cursor-sdk`, run `pnpm install`, then start pi from any project
 - List Cursor models, requires pi and usually a Cursor key: `pi --list-models cursor`
 
 - Lint: `npm run lint` (oxlint; `npm run lint:fix` to auto-fix safe issues)

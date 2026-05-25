@@ -53,7 +53,9 @@
 		"lint": "oxlint src test scripts",
 		"lint:fix": "oxlint --fix src test scripts",
 		"format": "oxfmt",
-		"format:check": "oxfmt --check"
+		"format:check": "oxfmt --check",
+		"pi:package:local": "node scripts/pi-cursor-sdk-package.mjs local",
+		"pi:package:remote": "node scripts/pi-cursor-sdk-package.mjs remote"
 	},
 	"dependencies": {
 		"@cursor/sdk": "^1.0.13",
