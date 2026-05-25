@@ -6,6 +6,9 @@ import {
 
 // OpenCode-inspired diff backgrounds for dark terminals.
 export const COMPACT_DIFF_BLOCK_BG_RGB = { r: 0x14, g: 0x14, b: 0x14 } as const;
+export const COMPACT_ERROR_BLOCK_BG_RGB = { r: 0x28, g: 0x14, b: 0x14 } as const;
+export const COMPACT_ERROR_PREVIEW_LINES = 5;
+export const COMPACT_EXPANDED_OUTPUT_LINES = 40;
 /** Zero-width space survives pi-tui Text.render()'s trim() empty-line skip. */
 export const COMPACT_DIFF_BLOCK_SPACER_TEXT = "\u200b";
 const DIFF_BG = {
@@ -90,6 +93,10 @@ function diffLineBgFn(kind: DiffLineKind): (text: string) => string {
 
 export function getCompactDiffBlockBgFn(): (text: string) => string {
 	return rgbBgFn(COMPACT_DIFF_BLOCK_BG_RGB);
+}
+
+export function getCompactErrorBlockBgFn(): (text: string) => string {
+	return rgbBgFn(COMPACT_ERROR_BLOCK_BG_RGB);
 }
 
 function highlightDiffContents(

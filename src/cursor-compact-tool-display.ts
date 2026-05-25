@@ -13,8 +13,13 @@ import { buildCompactFileMutationPreviewLines } from "./cursor-compact-file-muta
 import {
 	COMPACT_DIFF_BLOCK_SPACER_TEXT,
 	getCompactDiffBlockBgFn,
+	getCompactErrorBlockBgFn,
 	type CompactDiffPreviewLine,
 } from "./cursor-compact-diff-display.js";
+import {
+	buildCompactOutputPreviewLines,
+	parseCompactBashExitCode,
+} from "./cursor-compact-output-display.js";
 import { asCursorReplayToolDetails } from "./cursor-native-tool-display-replay.js";
 import { formatDisplayPath } from "./cursor-transcript-utils.js";
 
@@ -280,23 +285,30 @@ function countDisplayLines(text: string): number {
 	return withoutFinalNewline ? withoutFinalNewline.split("\n").length : 0;
 }
 
-export function renderCompactFileMutationBlock(
+export function renderCompactHighlightedBlock(
 	callLine: string,
 	previewLines: CompactDiffPreviewLine[] | undefined,
-	_theme: CompactToolTheme,
+	blockBgFn: (text: string) => string,
 ): Component {
 	const container = new Container();
 	if (previewLines && previewLines.length > 0) {
-		const blockBgFn = getCompactDiffBlockBgFn();
 		container.addChild(new Text(COMPACT_DIFF_BLOCK_SPACER_TEXT, COMPACT_ROW_PADDING.length, 0, blockBgFn));
 		container.addChild(new Text(callLine, COMPACT_ROW_PADDING.length, 0, blockBgFn));
 		for (const previewLine of previewLines) {
 			container.addChild(new Text(previewLine.text, COMPACT_ROW_PADDING.length, 0, previewLine.bgFn));
 		}
-	} else {
-		container.addChild(new Text(callLine, COMPACT_ROW_PADDING.length, 0));
+		return container;
 	}
+	container.addChild(new Text(callLine, COMPACT_ROW_PADDING.length, 0, blockBgFn));
 	return container;
+}
+
+export function renderCompactFileMutationBlock(
+	callLine: string,
+	previewLines: CompactDiffPreviewLine[] | undefined,
+	_theme: CompactToolTheme,
+): Component {
+	return renderCompactHighlightedBlock(callLine, previewLines, getCompactDiffBlockBgFn());
 }
 
 function buildCompactFileMutationCallLine(
@@ -334,7 +346,17 @@ function renderCompactFileMutationToolResult(
 	callLineOverride?: string,
 ): Component {
 	if (options.isPartial) return new Text("", 0, 0);
-	if (isError) return getFallbackRenderResult();
+	if (isError) {
+		const mutationArgs = withReplayMutationArgs(
+			context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined,
+			asCursorReplayToolDetails(result.details),
+		);
+		const callLine = callLineOverride ?? buildCompactFileMutationCallLine(toolName, mutationArgs, theme, context.cwd);
+		const previewLines = buildCompactOutputPreviewLines(getCompactResultText(result), theme, options.expanded ?? false, {
+			error: true,
+		});
+		return renderCompactHighlightedBlock(callLine, previewLines, getCompactErrorBlockBgFn());
+	}
 
 	const details = asCursorReplayToolDetails(result.details);
 	const mutationArgs = withReplayMutationArgs(
@@ -407,6 +429,52 @@ function getCompactBashDurationMs(context: CompactToolRenderContext): number | u
 	return Math.max(end - state.startedAt, 0);
 }
 
+function buildCompactNativeCallLine(
+	toolName: CompactNativeToolName,
+	args: Record<string, unknown> | undefined,
+	theme: CompactToolTheme,
+	cwd: string,
+	result: CompactToolResult,
+	context: CompactToolRenderContext,
+	isError: boolean,
+): string {
+	if (!args) return COMPACT_CALL_FORMATTERS[toolName]({}, theme, cwd);
+	if (toolName === "grep" || toolName === "find") {
+		const matchCount = countCompactSearchMatches(toolName, result);
+		return COMPACT_CALL_FORMATTERS[toolName](args, theme, cwd, matchCount);
+	}
+	if (toolName === "bash") {
+		const outputText = getCompactResultText(result);
+		return formatCompactBashCall(args, theme, cwd, {
+			exitCode: isError ? (parseCompactBashExitCode(outputText) ?? 1) : 0,
+			durationMs: getCompactBashDurationMs(context),
+		});
+	}
+	if (toolName === "ls") {
+		return formatCompactLsCall(args, theme, cwd, countCompactLsEntries(result));
+	}
+	return COMPACT_CALL_FORMATTERS[toolName](args, theme, cwd);
+}
+
+function renderCompactNativeExpandedOrErrorResult(
+	toolName: CompactNativeToolName,
+	result: CompactToolResult,
+	options: Parameters<NonNullable<ToolDefinition["renderResult"]>>[1],
+	theme: CompactToolTheme,
+	context: Parameters<NonNullable<ToolDefinition["renderResult"]>>[3],
+	isError: boolean,
+): Component {
+	const args =
+		context.args && typeof context.args === "object" ? (context.args as Record<string, unknown>) : undefined;
+	const callLine = buildCompactNativeCallLine(toolName, args, theme, context.cwd, result, context, isError);
+	const outputText = getCompactResultText(result);
+	const previewLines = buildCompactOutputPreviewLines(outputText, theme, options.expanded ?? false, {
+		error: isError,
+		stripBashStatusSuffix: toolName === "bash",
+	});
+	return renderCompactHighlightedBlock(callLine, previewLines, isError ? getCompactErrorBlockBgFn() : getCompactDiffBlockBgFn());
+}
+
 export function renderCompactNativeToolCall(
 	toolName: CompactNativeToolName,
 	args: Record<string, unknown>,
@@ -449,47 +517,51 @@ export function renderCompactNativeToolResult(
 		});
 	}
 
-	const text = asTextComponent(context.lastComponent);
-	if (!options.expanded && !isError) {
+	if (options.isPartial) return new Text("", 0, 0);
+
+	if (isError || options.expanded) {
 		const hasImage = result.content.some((entry) => entry.type === "image");
-		if (hasImage) {
+		if (hasImage && !isError && !options.expanded) {
+			const text = asTextComponent(context.lastComponent);
 			text.setText(withCompactPadding(theme.fg("dim", "[image loaded — expand to view]")));
 			return text;
 		}
-		if (context.args && typeof context.args === "object") {
-			const args = context.args as Record<string, unknown>;
-			if (toolName === "grep" || toolName === "find") {
-				const matchCount = countCompactSearchMatches(toolName, result);
-				text.setText(withCompactPadding(COMPACT_CALL_FORMATTERS[toolName](args, theme, context.cwd, matchCount)));
-				return text;
-			}
-			if (toolName === "bash") {
-				const durationMs = getCompactBashDurationMs(context);
-				text.setText(
-					withCompactPadding(
-						formatCompactBashCall(args, theme, context.cwd, {
-							exitCode: 0,
-							durationMs,
-						}),
-					),
-				);
-				return text;
-			}
-			if (toolName === "ls") {
-				const entryCount = countCompactLsEntries(result);
-				text.setText(withCompactPadding(formatCompactLsCall(args, theme, context.cwd, entryCount)));
-				return text;
-			}
+		return renderCompactNativeExpandedOrErrorResult(toolName, result, options, theme, context, isError);
+	}
+
+	const text = asTextComponent(context.lastComponent);
+	const hasImage = result.content.some((entry) => entry.type === "image");
+	if (hasImage) {
+		text.setText(withCompactPadding(theme.fg("dim", "[image loaded — expand to view]")));
+		return text;
+	}
+	if (context.args && typeof context.args === "object") {
+		const args = context.args as Record<string, unknown>;
+		if (toolName === "grep" || toolName === "find") {
+			const matchCount = countCompactSearchMatches(toolName, result);
+			text.setText(withCompactPadding(COMPACT_CALL_FORMATTERS[toolName](args, theme, context.cwd, matchCount)));
+			return text;
 		}
-		text.setText("");
-		return text;
+		if (toolName === "bash") {
+			const durationMs = getCompactBashDurationMs(context);
+			text.setText(
+				withCompactPadding(
+					formatCompactBashCall(args, theme, context.cwd, {
+						exitCode: 0,
+						durationMs,
+					}),
+				),
+			);
+			return text;
+		}
+		if (toolName === "ls") {
+			const entryCount = countCompactLsEntries(result);
+			text.setText(withCompactPadding(formatCompactLsCall(args, theme, context.cwd, entryCount)));
+			return text;
+		}
 	}
-	const currentRenderResult = getCurrentRenderResult();
-	if (!currentRenderResult) {
-		text.setText("");
-		return text;
-	}
-	return currentRenderResult(result, options, theme, context);
+	text.setText("");
+	return text;
 }
 
 export function renderCompactCursorReplayResult(

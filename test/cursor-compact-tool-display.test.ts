@@ -16,6 +16,12 @@ import {
 	renderCompactNativeToolCall,
 	renderCompactNativeToolResult,
 } from "../src/cursor-compact-tool-display.js";
+import {
+	buildCompactOutputPreviewLines,
+	parseCompactBashExitCode,
+	stripCompactBashStatusSuffix,
+} from "../src/cursor-compact-output-display.js";
+import { COMPACT_ERROR_BLOCK_BG_RGB } from "../src/cursor-compact-diff-display.js";
 import { buildCompactFileMutationPreviewText } from "../src/cursor-compact-file-mutation-display.js";
 import { buildCompactDiffPreviewLines } from "../src/cursor-compact-diff-display.js";
 
@@ -168,7 +174,6 @@ describe("cursor-compact-tool-display", () => {
 	});
 
 	it("shows compact tool errors when collapsed", () => {
-		const renderResult = () => new Text("\nfile not found", 0, 0);
 		const collapsedError = renderCompactNativeToolResult(
 			"read",
 			{ content: [{ type: "text", text: "file not found" }] },
@@ -176,9 +181,57 @@ describe("cursor-compact-tool-display", () => {
 			theme,
 			{ cwd: "/repo", isError: true, showImages: true, args: { path: "missing.txt" } },
 			true,
-			() => renderResult,
+			() => () => new Text("fallback should not run", 0, 0),
 		);
-		expect(collapsedError.render(120).join("\n")).toContain("file not found");
+		const rendered = collapsedError.render(120).join("\n");
+		expect(rendered).toContain("file not found");
+		expect(rendered).not.toContain("fallback should not run");
+	});
+
+	it("renders collapsed bash errors in a red block with truncated output", () => {
+		const errorTheme = {
+			fg: (style: string, text: string) => text,
+			bold: (text: string) => text,
+		};
+		const lines = Array.from({ length: 6 }, (_, index) => `err-${index + 1}`).join("\n");
+		const collapsedError = renderCompactNativeToolResult(
+			"bash",
+			{ content: [{ type: "text", text: `${lines}\n\nCommand exited with code 2` }] },
+			{ expanded: false, isPartial: false },
+			errorTheme,
+			{
+				cwd: "/repo",
+				isError: true,
+				showImages: true,
+				args: { command: "false" },
+				state: { startedAt: 0, endedAt: 500 },
+			},
+			true,
+			() => () => new Text("fallback should not run", 0, 0),
+		);
+		const rendered = collapsedError.render(120);
+		const joined = rendered.join("\n");
+		expect(joined).not.toContain("fallback should not run");
+		expect(joined).toContain("$ false");
+		expect(joined).toContain("(exit 2");
+		expect(joined).toContain("err-1");
+		expect(joined).toContain("err-5");
+		expect(joined).not.toContain("err-6");
+		expect(joined).toContain("1 more lines hidden");
+		const redBg = `\x1b[48;2;${COMPACT_ERROR_BLOCK_BG_RGB.r};${COMPACT_ERROR_BLOCK_BG_RGB.g};${COMPACT_ERROR_BLOCK_BG_RGB.b}m`;
+		expect(rendered[0]).toContain(redBg);
+		expect(joined.split("$ false").length - 1).toBe(1);
+	});
+
+	it("strips bash status suffixes and parses exit codes for compact errors", () => {
+		expect(parseCompactBashExitCode("stdout\n\nCommand exited with code 2")).toBe(2);
+		expect(stripCompactBashStatusSuffix("stdout\n\nCommand exited with code 2")).toBe("stdout");
+		const preview = buildCompactOutputPreviewLines("one\ntwo\n\nCommand exited with code 1", theme, false, {
+			error: true,
+			stripBashStatusSuffix: true,
+		});
+		expect(preview).toHaveLength(2);
+		expect(preview[0]?.text).toBe("one");
 	});
 
 	it("shows a collapsed image hint for read results with image content", () => {
